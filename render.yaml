@@ -1,0 +1,26 @@
+# Render Blueprint — deploy via https://dashboard.render.com/blueprints
+# "New +" → "Blueprint" → point at this repo → Render reads this file.
+#
+# After creation, set the real secret values in Render's dashboard under
+# this service → Environment. sync: false below means Render will prompt
+# you for them at deploy time instead of expecting them in this file —
+# never put real keys in this file, it gets committed to git.
+services:
+  - type: web
+    name: appointed-time-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_SENDER_EMAIL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false

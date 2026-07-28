@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* ── Design tokens ─────────────────────────────────────────────────────
+   Ported 1:1 from the Streamlit app's --at-* CSS variables (app.py, the
+   "PREMIUM CSS TYPOGRAPHY & STYLING" block). Values are unchanged on
+   purpose — the brand identity (navy/slate/accent) already exists and is
+   specific to this product; this migration formalizes it into a real
+   theme instead of inventing a new palette. */
+:root {
+  --at-navy: #0f172a;
+  --at-navy-soft: #1e293b;
+  --at-slate: #64748b;
+  --at-slate-light: #94a3b8;
+  --at-border: #e2e8f0;
+  --at-bg: #f8fafc;
+  --at-white: #ffffff;
+  --at-accent: #0369a1;
+
+  --at-success: #10b981;
+  --at-success-bg: #d1fae5;
+  --at-success-text: #065f46;
+  --at-warning: #f59e0b;
+  --at-warning-bg: #fef7e0;
+  --at-warning-text: #b06000;
+  --at-danger: #ef4444;
+  --at-danger-soft: #fca5a5;
+
+  --at-radius-sm: 6px;
+  --at-radius: 10px;
+  --at-radius-lg: 12px;
+  --at-shadow-sm: 0 4px 6px -1px rgba(15, 23, 42, 0.04);
+  --at-shadow-md: 0 8px 15px -3px rgba(15, 23, 42, 0.08);
+}
+
+@theme inline {
+  --color-at-navy: var(--at-navy);
+  --color-at-navy-soft: var(--at-navy-soft);
+  --color-at-slate: var(--at-slate);
+  --color-at-slate-light: var(--at-slate-light);
+  --color-at-border: var(--at-border);
+  --color-at-bg: var(--at-bg);
+  --color-at-white: var(--at-white);
+  --color-at-accent: var(--at-accent);
+
+  --color-at-success: var(--at-success);
+  --color-at-success-bg: var(--at-success-bg);
+  --color-at-success-text: var(--at-success-text);
+  --color-at-warning: var(--at-warning);
+  --color-at-warning-bg: var(--at-warning-bg);
+  --color-at-warning-text: var(--at-warning-text);
+  --color-at-danger: var(--at-danger);
+  --color-at-danger-soft: var(--at-danger-soft);
+
+  --radius-at-sm: var(--at-radius-sm);
+  --radius-at: var(--at-radius);
+  --radius-at-lg: var(--at-radius-lg);
+  --shadow-at-sm: var(--at-shadow-sm);
+  --shadow-at-md: var(--at-shadow-md);
+
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--at-bg);
+  color: var(--at-navy);
+}
+
+/* Loose body copy, tight headings — same contrast move as the original
+   stylesheet's comment described: Streamlit's markdown default was
+   tighter than this. In real HTML we just set it directly. */
+p,
+li {
+  line-height: 1.65;
+}
+
+:focus-visible {
+  outline: 2px solid var(--at-accent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--at-slate-light);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
