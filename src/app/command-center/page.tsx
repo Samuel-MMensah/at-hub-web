@@ -3,6 +3,7 @@ import { TopBar } from "@/components/shell/topbar";
 import { MetricCard } from "@/components/ui/metric-card";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
+import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 
 const CURRENCY = "GH₵";
 
@@ -11,34 +12,16 @@ const CURRENCY = "GH₵";
 // Collection' (those belong to get_archive_orders_cached() instead).
 const ACTIVE_ORDER_STATUSES = ["Approved", "In Production", "At Warehouse"];
 
-// Ports _is_garment() from app.py line 791.
-const GARMENT_PRINT_TYPES = new Set([
-  "DTF",
-  "UV-DTF",
-  "SAV",
-  "EMBROIDERY",
-  "FLEXI SCREEN PRINT",
-]);
-
-interface OrderRow {
+interface OrderRow extends GarmentClassifiable {
   job_order_no: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
-  department: string | null;
-  type_of_print: string | null;
-  print_type: string | null;
 }
 
 interface JobRow {
   tracking_id: string | null;
   ups: number;
   finish_time: string | null;
-}
-
-function isGarment(row: OrderRow): boolean {
-  if ((row.department ?? "").trim().toUpperCase() === "GARMENT") return true;
-  const printType = (row.type_of_print || row.print_type || "").trim().toUpperCase();
-  return GARMENT_PRINT_TYPES.has(printType);
 }
 
 // Mirrors pandas' Series.nunique(): counts distinct non-null values.
