@@ -16,6 +16,8 @@ import {
 export type Role = string;
 
 export const ADMIN_ROLES: Role[] = ["admin", "manager", "supervisor", "md", "fm"];
+export const WAREHOUSE_ROLES: Role[] = ["warehouse"];
+export const FINANCE_ROLES: Role[] = ["finance"];
 
 export interface NavItem {
   label: string;
@@ -53,8 +55,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Raise Job Order", href: "/raise-order", icon: FilePlus2 },
       { label: "My Order Tracker", href: "/my-orders", icon: ClipboardList },
-      { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, "warehouse"] },
-      { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, "finance"] },
+      { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, ...WAREHOUSE_ROLES] },
+      { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },
       { label: "Approved Orders Archive", href: "/archive", icon: Archive, roles: ADMIN_ROLES },
       { label: "Audit Log", href: "/audit-log", icon: History, roles: ADMIN_ROLES },
@@ -62,9 +64,15 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-export function canSeeItem(item: NavItem, role: Role | null): boolean {
-  if (!item.roles) return true;
+// Shared by canSeeItem (nav visibility) and page-level access guards
+// (Warehouse/Dispatch) so both use the exact same role comparison.
+export function hasRole(role: Role | null, allowedRoles: Role[]): boolean {
   if (!role) return false;
   const normalizedRole = role.trim().toLowerCase();
-  return item.roles.some((roleInArray) => roleInArray.trim().toLowerCase() === normalizedRole);
+  return allowedRoles.some((allowed) => allowed.trim().toLowerCase() === normalizedRole);
+}
+
+export function canSeeItem(item: NavItem, role: Role | null): boolean {
+  if (!item.roles) return true;
+  return hasRole(role, item.roles);
 }
