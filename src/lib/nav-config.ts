@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type Role = "admin" | "manager" | "supervisor" | "md" | "fm" | "warehouse" | "finance" | "front_desk";
+export type Role = string;
 
 export const ADMIN_ROLES: Role[] = ["admin", "manager", "supervisor", "md", "fm"];
 
@@ -65,5 +65,6 @@ export const NAV_GROUPS: NavGroup[] = [
 export function canSeeItem(item: NavItem, role: Role | null): boolean {
   if (!item.roles) return true;
   if (!role) return false;
-  return item.roles.includes(role);
+  const normalizedRole = role.trim().toLowerCase();
+  return item.roles.some((roleInArray) => roleInArray.trim().toLowerCase() === normalizedRole);
 }

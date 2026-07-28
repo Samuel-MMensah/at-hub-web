@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 import { LogOut, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, canSeeItem, type Role } from "@/lib/nav-config";
+import { logout } from "@/app/login/actions";
 
 interface SidebarProps {
   userName: string;
   userRole: string;
   role: Role | null;
   pendingApprovalsCount?: number;
-  onLogout?: () => void;
   onSearch?: (query: string) => void;
 }
 
@@ -20,7 +20,6 @@ export function Sidebar({
   userRole,
   role,
   pendingApprovalsCount = 0,
-  onLogout,
   onSearch,
 }: SidebarProps) {
   const pathname = usePathname();
@@ -102,13 +101,15 @@ export function Sidebar({
       </div>
 
       <div className="border-t border-at-border p-3">
-        <button
-          onClick={onLogout}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-at-danger px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-red-600"
-        >
-          <LogOut size={15} />
-          Logout
-        </button>
+        <form action={logout}>
+          <button
+            type="submit"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-at-danger px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-red-600"
+          >
+            <LogOut size={15} />
+            Logout
+          </button>
+        </form>
         <div className="mt-4 text-center text-[0.7rem] tracking-wide text-at-slate-light">
           Version Aleph — Web
         </div>
