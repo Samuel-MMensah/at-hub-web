@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
 import { recordPayment, finalizeDispatch } from "./actions";
 
 const CURRENCY = "GH₵";
@@ -99,7 +100,7 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
 
       {balance > 0 && (
         <>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             <div>
               <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
                 Payment amount
@@ -126,16 +127,10 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
                 className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
               />
             </div>
+            <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
+              Record Payment
+            </Button>
           </div>
-
-          <button
-            type="button"
-            disabled={isPending || payAmt <= 0 || payAmt > balance}
-            onClick={handleRecordPayment}
-            className="mt-3 w-full rounded-lg bg-at-navy px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-at-navy-soft disabled:opacity-60"
-          >
-            Record Payment
-          </button>
 
           <div className="mt-3 rounded-at border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-800">
             Finalize Dispatch is locked until the outstanding balance of {money(balance)} is
@@ -170,14 +165,11 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
 
       {error && <div className="mt-3 text-sm font-semibold text-red-600">{error}</div>}
 
-      <button
-        type="button"
-        disabled={isPending || (balance > 0 && !confirm30Day) || notReady}
-        onClick={handleFinalize}
-        className="mt-3 w-full rounded-lg bg-at-navy px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-at-navy-soft disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Finalize Dispatch
-      </button>
+      <div className="mt-3 flex justify-end">
+        <Button disabled={isPending || (balance > 0 && !confirm30Day) || notReady} onClick={handleFinalize}>
+          Finalize Dispatch
+        </Button>
+      </div>
     </div>
   );
 }

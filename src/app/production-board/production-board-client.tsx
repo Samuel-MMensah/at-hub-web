@@ -2,6 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
+import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { startProduction, sendToWarehouse } from "./actions";
 
@@ -144,35 +146,21 @@ function ProductionOrderCard({ order }: { order: ProductionOrderRow & { _dept: D
 
       {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
 
-      <div className="flex gap-3">
+      <div className="flex justify-end gap-3">
         {status === "Approved" && (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={handleStartProduction}
-            className="flex-1 rounded-lg bg-at-navy px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-at-navy-soft disabled:opacity-60"
-          >
+          <Button disabled={isPending} onClick={handleStartProduction}>
             Start Production
-          </button>
+          </Button>
         )}
         {status === "In Production" && (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={handleSendToWarehouse}
-            className="flex-1 rounded-lg bg-at-accent px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:opacity-90 disabled:opacity-60"
-          >
+          <Button disabled={isPending} onClick={handleSendToWarehouse}>
             Send to Warehouse
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          disabled
-          title="PDF export depends on the backend service, which isn't implemented yet"
-          className="flex-1 cursor-not-allowed rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-bold text-at-slate-light"
-        >
-          Export PDF — coming soon
-        </button>
+        <PdfPreviewButton
+          orderId={order.id}
+          label={order._dept === "GARMENT" ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+        />
       </div>
     </div>
   );

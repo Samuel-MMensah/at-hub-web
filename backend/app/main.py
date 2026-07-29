@@ -4,11 +4,14 @@ Appointed Time — support service.
 Purpose: keep the three things that have no clean browser equivalent
 running server-side, unchanged from their proven Python implementation:
   1. PDF manifest generation   (reportlab — ports generate_pdf_manifest,
-     generate_garment_pdf_manifest, dispatch_pdf_manifest from app.py)
+     generate_garment_pdf_manifest, dispatch_pdf_manifest from app.py).
+     DONE — see app/pdf.py, wired below.
   2. Departmental / lifecycle email alerts (resend — ports messaging.py's
-     send_departmental_alert and app.py's notify_* functions)
+     send_departmental_alert and app.py's notify_* functions). Still a
+     stub.
   3. Production scheduling math (calculate_production_time,
-     get_machine_next_available_time, working-day calendar logic)
+     get_machine_next_available_time, working-day calendar logic).
+     Not started.
 
 Everything else (data reads, RBAC, UI) lives in the Next.js app talking
 directly to Supabase. This service is intentionally small — a handful of
@@ -17,19 +20,22 @@ auditable.
 
 Next steps to fill in (kept as stubs here on purpose, so nothing runs
 against production data until you've reviewed the port):
-  - Port reportlab layout code from app.py lines ~1528-2189 into
-    app/pdf.py, called from POST /pdf/manifest.
   - Port messaging.py's send_departmental_alert + app.py's notify_*
     functions into app/email.py, called from POST /email/*.
   - Port calculate_production_time + calendar helpers into
     app/scheduling.py, called from POST /scheduling/estimate.
-  - Add auth: verify the caller holds a valid Supabase session/service
-    role before generating a PDF or sending an email on someone's behalf.
+  - Every endpoint added here needs require_user() (app/auth.py) from
+    day one, not bolted on after the fact like POST /pdf/manifest was —
+    see MIGRATION_STATUS.md's rules section.
 """
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
+from app.auth import require_user
 from app.config import ALLOWED_ORIGINS
+from app.pdf import _is_garment, dispatch_pdf_manifest
+from app.supabase_client import get_supabase
 
 app = FastAPI(title="Appointed Time — Support Service")
 
@@ -38,6 +44,13 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,  # set via ALLOWED_ORIGINS env var, see .env.example
     allow_methods=["*"],
     allow_headers=["*"],
+    # Content-Disposition isn't on the browser's default CORS-safelisted
+    # response headers — without this, fetch()'s Response.headers.get()
+    # silently returns null for it cross-origin (curl doesn't enforce
+    # this, so it's invisible to a plain curl test). The PDF preview
+    # component reads this header to get the real filename (with the
+    # Garment/ prefix), so it has to be explicitly exposed.
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -46,10 +59,35 @@ def health():
     return {"status": "ok"}
 
 
+class ManifestRequest(BaseModel):
+    # job_orders.id (bigint) — the same key already used throughout the
+    # Next.js app's Server Actions. The backend fetches the row itself
+    # from the service-role client rather than trusting a client-supplied
+    # data blob, since this document is meant to reflect DB truth (a
+    # caller-supplied total_amount/customer_name could otherwise be used
+    # to produce a fraudulent-looking official manifest).
+    order_id: int
+
+
 @app.post("/pdf/manifest")
-def generate_manifest():
-    # TODO: port from app.py's generate_pdf_manifest / dispatch_pdf_manifest
-    raise NotImplementedError("Port reportlab manifest logic from app.py here.")
+def generate_manifest(payload: ManifestRequest, user=Depends(require_user)):
+    supabase = get_supabase()
+    res = supabase.table("job_orders").select("*").eq("id", payload.order_id).execute()
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail=f"job_orders row not found for id={payload.order_id}")
+
+    ticket = res.data[0]
+    pdf_buffer = dispatch_pdf_manifest(ticket)
+
+    order_no = ticket.get("job_order_no") or "PENDING"
+    filename = f"{'Garment' if _is_garment(ticket) else ''}Manifest_{order_no}.pdf"
+
+    return Response(
+        content=pdf_buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/email/departmental-alert")

@@ -16,6 +16,11 @@ load_dotenv()  # no-op in production if no .env file is present — Render
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+# Anon/public key — same value as the frontend's NEXT_PUBLIC_SUPABASE_ANON_KEY,
+# not a secret. Used only to verify a caller's session token
+# (auth.get_user(token)) before generating a PDF; the actual DB read
+# still goes through the service-role client above.
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_SENDER_EMAIL = os.environ.get("RESEND_SENDER_EMAIL", "onboarding@resend.dev")

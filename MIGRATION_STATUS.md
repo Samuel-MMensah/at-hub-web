@@ -12,11 +12,44 @@ hosting/keys setup.
 - `/my-orders` (My Order Tracker) — real Supabase data (the signed-in
   user's own `job_orders`, plus related `jobs` rows for the pipeline
   banner), not mock data. See "Data layer (My Order Tracker)" below.
+- `/warehouse` — real, role-gated (`ADMIN_ROLES ∪ WAREHOUSE_ROLES`).
+  Read-only view of orders `At Warehouse`; its one action (Notify
+  Finance This Is Ready) is visible but disabled, backend-dependent —
+  see "What's NOT done yet".
+- `/dispatch` — real, role-gated (`ADMIN_ROLES ∪ FINANCE_ROLES`). Real
+  writes: Record Payment (cumulative deposit total, not incremental),
+  Finalize Dispatch (writes `status = 'Delivered'` +
+  `delivered_date`).
+- `/production-board` — real, no role gate (matches `production.py`:
+  any authenticated user, department filter locked for floor staff via
+  `profiles.department`). Real writes: Start Production (writes
+  `production_start_date`), Send to Warehouse (its notification step
+  is deferred — best-effort/non-blocking in the original too, not a
+  regression).
+- `/audit-log` — real, admin-only (`ADMIN_ROLES`, matches the
+  `is_admin` convention). Read-only: search, dynamically-built status
+  filter, CSV export.
+- `/archive` (Approved Orders Archive) — **partially migrated, not a
+  simple "done":**
+  - **Phase 1 — built and real, this is what's live at `/archive`
+    right now:** the tabbed table view (Approved / In Production /
+    Ready for Collection / Delivered), per-tab CSV export. Fully
+    read-only, no write actions.
+  - **"Manage Archived Orders" — deliberately not built yet, not
+    forgotten.** Record Balance Payment, the Master Order Revision edit
+    form, and Delete Master Order are held on explicit product
+    decisions still needed: the edit form's re-routing side effect
+    (saving changes moves an order to `Pending Revision Approval` and
+    re-routes it to Authorization Center — a real workflow change, not
+    just a data edit) and a safer delete pattern than the original's
+    single-click, zero-confirmation delete (agreed direction: a
+    type-the-order-number-to-confirm gate before the delete button
+    enables — not yet built).
 
 ## Routes still in Streamlit
 
-Raise Job Order, Authorization Center, Warehouse, Dispatch, Production
-Board, Shop Floor Control, Archive, Audit Log.
+Shop Floor Control, Production Layout Builder, Authorization Center,
+Raise Job Order.
 
 ## Auth
 
@@ -106,9 +139,10 @@ Ports `app.py`'s "My Order Tracker" route (`get_all_db_job_orders_by_user()`
   generic "detailed schedule not available" message when there's no
   schedule data. See "Known gaps" for the unverified timezone-parsing
   caveat on the underlying date values.
-- PDF export — visible, disabled, labeled "coming soon." Backend's
-  `/pdf/manifest` is still a `NotImplementedError` stub, so this isn't
-  wired to it (avoids a button that would just error on click).
+- PDF export — **real**, via the shared `PdfPreviewButton` (see "Shared
+  infrastructure"). No longer disabled/"coming soon" — `POST
+  /pdf/manifest` is live. See "Backend service — PDF manifest
+  generation" below.
 - Modify & Resubmit — **omitted entirely this pass**. The original
   hands off to Raise Job Order, which doesn't exist yet in this app;
   this is a noted follow-up once that route is built, not a silently
@@ -117,6 +151,50 @@ Ports `app.py`'s "My Order Tracker" route (`get_all_db_job_orders_by_user()`
 Exact logic lives in `src/app/my-orders/page.tsx` and
 `src/app/my-orders/order-tracker-client.tsx` — these files are the
 source of truth, not this doc.
+
+## Backend service — PDF manifest generation
+
+`backend/app/pdf.py` is a real port of `generate_pdf_manifest`,
+`generate_garment_pdf_manifest`, and `dispatch_pdf_manifest` from
+`app.py` — same reportlab layout, tables, and styles, not a rewrite.
+`POST /pdf/manifest` (`backend/app/main.py`) is live: takes
+`{"order_id": <job_orders.id>}`, fetches the row itself via the
+service-role client (doesn't trust a caller-supplied data blob, since
+this is meant to reflect DB truth), and returns the PDF bytes.
+
+- **Auth is the standard every future backend endpoint must follow from
+  day one.** `require_user()` (`backend/app/auth.py`) verifies a
+  `Authorization: Bearer <token>` header via the **anon-key** client's
+  `auth.get_user(token)` — not service-role — before the route body
+  runs; no valid session means `401`, not a PDF. Any authenticated user
+  passes, no role check, matching `job_orders`' existing RLS posture
+  (`roles: {authenticated}, qual: true` — deliberately broad, not
+  role-restricted; see "Rules to keep following"). **This was initially
+  built without any auth check at all** — caught and fixed only because
+  it was flagged before this went anywhere near a deployed/public
+  backend, not after. Email sending and every other future endpoint
+  need `require_user()` wired in from the start, not bolted on later
+  once something's already reachable.
+- **CORS gotcha worth remembering:** `Content-Disposition` isn't on the
+  browser's default CORS-safelisted response headers. Without
+  `expose_headers=["Content-Disposition"]` on the CORS middleware,
+  `fetch()`'s `Response.headers.get("Content-Disposition")` silently
+  returns `null` cross-origin — invisible to same-origin `curl` testing,
+  only surfaces with a real cross-origin browser request (or a `curl`
+  test that specifically simulates the CORS preflight + `Origin`
+  header). Any future endpoint that needs a browser to read a custom
+  response header cross-origin will hit this same class of bug.
+- **Cedi glyph fix:** both PDF generators now use literal `"GHC"` text
+  for Total/Deposit/Balance labels. The source itself was inconsistent
+  — `generate_pdf_manifest` already used `"GHC"`; only
+  `generate_garment_pdf_manifest` embedded the literal `₵` character,
+  which reportlab's default Helvetica (no Cedi glyph) renders as a
+  broken box in both this port and the original. Confirmed via a real
+  generated PDF before and after the fix.
+
+Exact logic lives in `backend/app/pdf.py`, `backend/app/main.py`, and
+`backend/app/auth.py` — these files are the source of truth, not this
+doc.
 
 ## Shared infrastructure
 
@@ -135,6 +213,12 @@ source of truth, not this doc.
   Shop Floor Control will need the same `jobs.finish_time`/
   `revised_finish` parsing. See "Known gaps" for its
   unverified-against-real-data caveat.
+- `PdfPreviewButton` (`src/components/ui/pdf-preview-button.tsx`) —
+  fetches the PDF as a blob (with the `Authorization: Bearer` token from
+  `supabase.auth.getSession()`), renders it in an `<iframe>` modal with
+  a real Download button. Used by Production Board and My Order
+  Tracker; ready to wire into Archive once its "Manage Archived Orders"
+  section (still deferred — see Archive's own scope notes) gets built.
 
 ## What's NOT done yet
 
@@ -142,14 +226,16 @@ source of truth, not this doc.
   intended source of truth to translate into Postgres RLS — right now,
   access control is enforced by the app (session check + client-side nav
   gating), not by the database.
-- PDF generation and email sending are stubs in `backend/app/main.py`
-  (`NotImplementedError`), with docstrings pointing at the app.py line
-  ranges still to port. My Order Tracker's PDF button is disabled
-  pending this.
+- Email sending is still a stub in `backend/app/main.py`
+  (`NotImplementedError`) — PDF generation is done (see "Backend
+  service — PDF manifest generation"), email is not.
 - Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
   omitted until Raise Job Order exists.
-- Every route besides `/login`, `/command-center`, and `/my-orders` is
-  still Streamlit.
+- Archive's "Manage Archived Orders" section (payment recording, edit
+  form, delete) — see "Routes migrated" for why it's held, not just
+  missing.
+- Shop Floor Control, Production Layout Builder, Authorization Center,
+  and Raise Job Order are still Streamlit.
 
 ## Known gaps
 
@@ -170,6 +256,16 @@ source of truth, not this doc.
   violated somewhere upstream (e.g. the insert path writing a naive
   string). That's worth escalating and fixing at the source, not
   silently working around again in this function.
+- **PDF signature line looks wrong when `approved_by` holds an email
+  instead of a name** — e.g. "E. — enoch.obeng@appointedtime.com.gh"
+  instead of a name-shaped signature. `_build_sig()`'s initials logic
+  (split on spaces) collapses an email to one letter. This is the
+  ported logic working exactly as designed against real data —
+  `approved_by` is genuinely stored as an email for these orders, not a
+  bug in the port. **Flagged, not fixed** — revisit once Authorization
+  Center exists and `profiles.full_name` is reliably available at
+  approval time (i.e. store/display the approver's name, not their
+  email, once there's a real place upstream to get it from).
 
 ## Rules to keep following
 
@@ -185,6 +281,14 @@ source of truth, not this doc.
 - Don't guess at business logic (status values, KPI filters, table
   columns) — confirm against the real schema/data or ask, rather than
   assume. Wrong assumptions here misrepresent real financial/ops data.
+- **Every backend endpoint needs `require_user()` (`backend/app/auth.py`)
+  from day one, not bolted on after the fact.** `POST /pdf/manifest`
+  was initially built with no auth check at all — anyone who could
+  reach the backend could have generated any order's PDF by guessing
+  `order_id`. Caught and fixed only because it was flagged before this
+  went anywhere near a deployed/public backend, not after. Email
+  sending and every future endpoint start with the auth check, not end
+  with it.
 
 ## Next up
 

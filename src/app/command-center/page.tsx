@@ -4,6 +4,13 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import {
+  TrendCharts,
+  CapacityCharts,
+  OrderIntakeChart,
+  type TrendOrderRow,
+  type CapacityJobRow,
+} from "./charts";
 
 const CURRENCY = "GH₵";
 
@@ -16,12 +23,16 @@ interface OrderRow extends GarmentClassifiable {
   job_order_no: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
+  created_at: string | null;
 }
 
 interface JobRow {
   tracking_id: string | null;
   ups: number;
   finish_time: string | null;
+  machine: string;
+  job_name: string;
+  contract_value: number | null;
 }
 
 // Mirrors pandas' Series.nunique(): counts distinct non-null values.
@@ -38,10 +49,17 @@ async function getKpis() {
 
   const jobsWindowStart = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
 
-  const [ordersRes, pendingRes, jobsRes] = await Promise.all([
+  // Trend charts need a broader, date-bounded (not status-filtered) fetch —
+  // 365 days covers both the Weekly (180d) and Monthly (365d) toggle states,
+  // so switching periods client-side never needs a second round-trip.
+  const trendCutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [ordersRes, pendingRes, jobsRes, trendRes] = await Promise.all([
     supabase
       .from("job_orders")
-      .select("job_order_no, total_amount, deposit_amount, department, type_of_print, print_type")
+      .select(
+        "job_order_no, total_amount, deposit_amount, department, type_of_print, print_type, created_at"
+      )
       .in("status", ACTIVE_ORDER_STATUSES),
     supabase
       .from("job_orders")
@@ -49,12 +67,17 @@ async function getKpis() {
       .eq("status", "Pending"),
     supabase
       .from("jobs")
-      .select("tracking_id, ups, finish_time")
+      .select("tracking_id, ups, finish_time, machine, job_name, contract_value")
       .or(`finish_time.gte.${jobsWindowStart},finish_time.is.null`),
+    supabase
+      .from("job_orders")
+      .select("created_at, job_order_no, total_amount, deposit_amount")
+      .gte("created_at", trendCutoff),
   ]);
 
   const orders = (ordersRes.data ?? []) as OrderRow[];
   const jobs = (jobsRes.data ?? []) as JobRow[];
+  const trendRows = (trendRes.data ?? []) as TrendOrderRow[];
 
   const contractValue = orders.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
   const depositCollected = orders.reduce((sum, row) => sum + Number(row.deposit_amount ?? 0), 0);
@@ -69,6 +92,9 @@ async function getKpis() {
     depositCollected,
     outstandingBalance: contractValue - depositCollected,
     pendingApprovals: pendingRes.count ?? 0,
+    orders,
+    jobs: jobs as CapacityJobRow[],
+    trendRows,
   };
 }
 
@@ -85,6 +111,9 @@ export default async function CommandCenterPage() {
     depositCollected,
     outstandingBalance,
     pendingApprovals,
+    orders,
+    jobs,
+    trendRows,
   } = await getKpis();
 
   return (
@@ -130,6 +159,10 @@ export default async function CommandCenterPage() {
           value={`${CURRENCY}${contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
         />
       </div>
+
+      <TrendCharts rows={trendRows} />
+      <CapacityCharts jobs={jobs} />
+      <OrderIntakeChart orders={orders} />
     </AppShell>
   );
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, FINANCE_ROLES, hasRole } from "@/lib/nav-config";
+import { formatLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
 
 interface ActionResult {
   error?: string;
@@ -49,14 +50,19 @@ export async function recordPayment(
 // Mirrors dispatch.py's update_order_lifecycle_status(id, 'Delivered') —
 // 'Delivered' is the real terminal status the rest of the app already
 // filters on (My Order Tracker's status list, Command Center excluding
-// it from "active"). Not a new "Dispatched" status.
+// it from "active"). Not a new "Dispatched" status. Also writes
+// delivered_date, matching update_order_lifecycle_status()'s real
+// timestamp-column behavior (app.py:1120).
 export async function finalizeDispatch(orderId: number): Promise<ActionResult> {
   await requireDispatchAccess();
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("job_orders")
-    .update({ status: "Delivered" })
+    .update({
+      status: "Delivered",
+      delivered_date: formatLifecycleTimestamp(new Date()),
+    })
     .eq("id", orderId);
 
   if (error) {

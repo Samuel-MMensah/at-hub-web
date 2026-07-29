@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
 import { RestrictedAccess } from "@/components/shell/restricted-access";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, WAREHOUSE_ROLES, hasRole } from "@/lib/nav-config";
@@ -67,20 +68,18 @@ export default async function WarehousePage() {
                   Quantity: {order.qty_to_print ?? "—"}
                 </div>
 
-                <div className="mt-4">
+                <div className="mt-4 flex justify-end">
                   {alreadyNotified ? (
-                    <div className="rounded-at border border-emerald-200 bg-at-success-bg px-4 py-2.5 text-sm font-semibold text-at-success-text">
+                    <div className="w-full rounded-at border border-emerald-200 bg-at-success-bg px-4 py-2.5 text-sm font-semibold text-at-success-text">
                       Finance already notified — awaiting dispatch finalization.
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      disabled
+                    <Button
+                      variant="ghost"
                       title="Notification sending depends on the backend service, which isn't implemented yet"
-                      className="w-full cursor-not-allowed rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-bold text-at-slate-light"
                     >
                       Notify Finance This Is Ready — coming soon
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>

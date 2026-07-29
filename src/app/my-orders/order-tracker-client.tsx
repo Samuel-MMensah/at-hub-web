@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { MetricCard } from "@/components/ui/metric-card";
+import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
 
@@ -584,14 +585,12 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
 
       {status === "In Production" && <PipelineBanner orderNo={orderNo} jobs={jobs} />}
 
-      <button
-        type="button"
-        disabled
-        title="PDF export — coming soon"
-        className="flex w-full cursor-not-allowed items-center justify-center rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-bold text-at-slate-light"
-      >
-        {garment ? "🧵" : "📄"} PDF export — coming soon
-      </button>
+      <div className="flex justify-end">
+        <PdfPreviewButton
+          orderId={order.id}
+          label={garment ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+        />
+      </div>
     </div>
   );
 }
