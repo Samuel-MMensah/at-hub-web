@@ -45,11 +45,35 @@ hosting/keys setup.
     single-click, zero-confirmation delete (agreed direction: a
     type-the-order-number-to-confirm gate before the delete button
     enables — not yet built).
+- `/shop-floor` (Shop Floor Control) — real, no role gate (matches
+  `app.py`: any authenticated user). Read-only: three Gantt-style
+  timelines (Production Pipeline across every in-flight order, a
+  per-order stage drill-down, whole-shop Machine Utilisation) sharing
+  one `GanttChart` component. No write action (Operator Update is not
+  built).
+- `/authorization` (Authorization Center) — real, admin-only
+  (`ADMIN_ROLES`, matches `is_admin`). Search, status filter,
+  batch/group rendering by `parent_group_id`, 40-groups-per-page
+  pagination, financial matrix + logistics grid + dept-aware spec
+  section per line item. Real writes: Approve (`status = 'Approved'`,
+  `approved_by` = current user's full name, `approval_date` —
+  see "Known gaps" for why that's `approval_date` and not
+  `approved_at`) and Reject (`status = 'Rejected'`, `rejection_note`,
+  requires a non-empty note). Both guarded with
+  `.in('status', ['Pending Approval', 'Pending Revision Approval'])`
+  to prevent double-actioning a row someone else already resolved.
+  Verified against a live throwaway insert/approve/reject/delete cycle,
+  not just typecheck/lint — see git history for the session this
+  landed in. Notifications (`notify_order_approved`,
+  `notify_needs_scheduling`, `send_departmental_alert`,
+  `notify_order_rejected`) are intentionally omitted, same precedent as
+  Production Board's `sendToWarehouse` — the backend email endpoints
+  are still `NotImplementedError` stubs, and the source itself treats
+  every one of these as best-effort/non-blocking.
 
 ## Routes still in Streamlit
 
-Shop Floor Control, Production Layout Builder, Authorization Center,
-Raise Job Order.
+Production Layout Builder, Raise Job Order.
 
 ## Auth
 
@@ -234,8 +258,11 @@ doc.
 - Archive's "Manage Archived Orders" section (payment recording, edit
   form, delete) — see "Routes migrated" for why it's held, not just
   missing.
-- Shop Floor Control, Production Layout Builder, Authorization Center,
-  and Raise Job Order are still Streamlit.
+- Production Layout Builder and Raise Job Order are still Streamlit.
+- Authorization Center's four approve/reject notifications
+  (`notify_order_approved`, `notify_needs_scheduling`,
+  `send_departmental_alert`, `notify_order_rejected`) — deferred until
+  `backend/app/main.py`'s email endpoints exist. See "Routes migrated".
 
 ## Known gaps
 
@@ -261,11 +288,27 @@ doc.
   instead of a name-shaped signature. `_build_sig()`'s initials logic
   (split on spaces) collapses an email to one letter. This is the
   ported logic working exactly as designed against real data —
-  `approved_by` is genuinely stored as an email for these orders, not a
-  bug in the port. **Flagged, not fixed** — revisit once Authorization
-  Center exists and `profiles.full_name` is reliably available at
-  approval time (i.e. store/display the approver's name, not their
-  email, once there's a real place upstream to get it from).
+  `approved_by` is genuinely stored as an email for these orders (every
+  approval before Authorization Center existed went through the old
+  Streamlit route, which only had `st.session_state['user_email']` to
+  work with). **Fixed going forward, not retroactively**: Authorization
+  Center's `approveOrder()` now writes `requireUser().fullName` (a real
+  `profiles.full_name`, confirmed live — a real test approval recorded
+  `"Samuel Mensah"`, not an email), so new approvals get a proper
+  signature. Historical rows keep whatever they already have.
+- **`approval_date` and `approved_at` are two separate real columns —
+  only `approval_date` is ever written.** Confirmed live twice: all 6
+  sampled pre-existing `Approved` rows have `approval_date` populated
+  (a lifecycle-style TEXT column, `"YYYY-MM-DD HH:MM:SS UTC"`, same
+  shape as `production_start_date`/`ready_date`/`delivered_date`) and
+  `approved_at` null on every one; a fresh test approval through
+  Authorization Center reproduced the same split. `approved_at` is a
+  real column but nothing — old route or new — has ever written to it.
+  My Order Tracker's "Avg Days to Approval" metric originally read
+  `approved_at` and was therefore silently dead (always "—") since it
+  shipped; fixed in this session to read `approval_date` via the new
+  `parseLifecycleTimestamp()` helper (`src/lib/lifecycle-timestamp.ts`)
+  instead.
 
 ## Rules to keep following
 
@@ -354,6 +397,9 @@ explicitly.**
 
 - Write the RLS policies `nav-config.ts` implies, so access control
   doesn't rest solely on the app layer.
-- Migrate the next Streamlit module. Raise Job Order has no upstream
-  dependency; Authorization Center depends on Raise Job Order existing
-  first (it approves what that flow creates).
+- Migrate the next Streamlit module: Raise Job Order (no upstream
+  dependency) or Production Layout Builder.
+- Port `send_departmental_alert` + the `notify_*` functions into
+  `backend/app/email.py` so Authorization Center's approve/reject
+  notifications (currently omitted, see "What's NOT done yet") can be
+  wired up instead of skipped.

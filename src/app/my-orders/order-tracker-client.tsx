@@ -5,6 +5,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
+import { parseLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
 
 const CURRENCY = "GH₵";
 
@@ -24,6 +25,7 @@ export interface JobOrderRow extends GarmentClassifiable {
   status: string | null;
   approved_by: string | null;
   approved_at: string | null;
+  approval_date: string | null;
   parent_group_id: string | null;
   rejection_note: string | null;
 }
@@ -147,11 +149,16 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
   const approvalRate = (approvedCount / Math.max(totalRaised, 1)) * 100;
   const avgOrderValue = totalRaised > 0 ? totalContractValue / totalRaised : 0;
 
+  // Reads approval_date, not approved_at: confirmed live (both against
+  // real historical rows and a fresh test approval through Authorization
+  // Center) that approved_at is never populated by any write path — it's
+  // approval_date that actually carries the approval timestamp, as a
+  // lifecycle-style TEXT column rather than a native timestamptz.
   const avgDaysToApproval = useMemo(() => {
     const durations = orders
-      .filter((o) => o.status === "Approved" && o.approved_at && o.created_at)
+      .filter((o) => o.status === "Approved" && o.approval_date && o.created_at)
       .map((o) => {
-        const approvedAt = new Date(o.approved_at as string).getTime();
+        const approvedAt = parseLifecycleTimestamp(o.approval_date as string).getTime();
         const createdAt = new Date(o.created_at as string).getTime();
         return (approvedAt - createdAt) / 86_400_000;
       })
