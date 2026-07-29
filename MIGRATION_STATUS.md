@@ -140,10 +140,58 @@ hosting/keys setup.
   Production Board's `sendToWarehouse` — the backend email endpoints
   are still `NotImplementedError` stubs, and the source itself treats
   every one of these as best-effort/non-blocking.
+- `/production-layout` (Production Layout Builder) — real, admin-only
+  (`ADMIN_ROLES`, matches `is_admin`). Order selector limited to
+  `status = 'Approved'` orders, form fields matching app.py's Job
+  Identification / Production Dimensions / Printing Presses / Finishing
+  Machines sections exactly, `_estimate_working_days()` pre-flight
+  sanity check (>30 working days requires an explicit override
+  checkbox). Real write: **the full scheduling engine**, ported to
+  `src/app/production-layout/scheduling.ts` as a pure,
+  framework-agnostic module —
+  `apply_calendar_bounds`/`_next_working_day_start`/
+  `get_machine_next_available_time`/`calculate_production_time`/
+  `add_multi_part_job` (app.py:1261-1436), wired up in
+  `src/app/production-layout/actions.ts`'s `commitProductionPlan`,
+  which then mirrors `update_order_lifecycle_status(id, 'In Production')`
+  the same way Production Board's `startProduction` already does.
+  - **Deliberate deviation from source** (the one place this port
+    intentionally does not match app.py): the Die Cutter → Folder
+    Gluer transition uses `dieCutterToFolderGluerStart()` — 3 hours
+    after Die Cutter's actual start, same day, snapped forward via
+    `apply_calendar_bounds` if that lands outside 8am-5pm or a
+    weekend — instead of the source's literal
+    `_next_working_day_start()` call there. This is the resolved
+    product decision from "Resolved design decision — Die Cutter to
+    Folder Gluer scheduling" below, now actually implemented rather
+    than just documented. Printing → Die Cutter is unchanged.
+  - **Verified before ever touching a real order or the database**:
+    `scripts/verify-scheduling.ts`, a standalone, hand-verifiable test
+    harness (no UI, no database) covering `applyCalendarBounds`
+    directly (before-hours/after-hours/weekend snaps), multi-day
+    rollovers including an exact-17:00-boundary edge case, a
+    Friday-into-weekend rollover, machine-backlog override, and the
+    Die Cutter → Folder Gluer deviation itself side-by-side against
+    what the old rule would have produced. Every case was independently
+    hand-computed and confirmed against the script's real terminal
+    output (re-run live, not reused from an earlier paste) before any
+    wiring happened. A second script, `scripts/trace-real-payload.ts`,
+    traced one real Approved order's exact numbers through the engine
+    as an additional check.
+  - **End-to-end verified live** on one synthetic Approved order
+    (SM102-CX FOUR COLOUR → Die Cutter → Folder Gluer, no existing
+    machine backlog): every resulting `jobs` row's `start_time`/
+    `finish_time` matched independent hand computation exactly,
+    including the critical proof that Folder Gluer started the SAME
+    day as Die Cutter (3 hours later), not the next calendar day.
+    `job_orders.status` confirmed flipped to `'In Production'`,
+    `contract_value` split evenly across all 3 stages, single
+    `tracking_id` shared across the whole job. Test order and its
+    `jobs` rows deleted and confirmed gone afterward.
 
 ## Routes still in Streamlit
 
-Production Layout Builder, Raise Job Order.
+Raise Job Order.
 
 ## Auth
 
@@ -325,7 +373,7 @@ doc.
   service — PDF manifest generation"), email is not.
 - Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
   omitted until Raise Job Order exists.
-- Production Layout Builder and Raise Job Order are still Streamlit.
+- Raise Job Order is still Streamlit.
 - Authorization Center's four approve/reject notifications
   (`notify_order_approved`, `notify_needs_scheduling`,
   `send_departmental_alert`, `notify_order_rejected`) — deferred until
@@ -442,15 +490,17 @@ doc.
   the FastAPI app, breaking any fresh backend restart with no visible
   symptom until it happened.
 
-## Resolved design decision — Die Cutter to Folder Gluer scheduling
+## Implemented design decision — Die Cutter to Folder Gluer scheduling
 
-Scoped entirely to Production Layout Builder / Raise Job Order's
-scheduling engine, which hasn't been built yet (last in the build
-sequence per existing project ordering — see "Next up"). **Still
-documentation only — nothing here is implemented.** The decision below
-was previously open and blocking; it is now resolved and ready to
-implement whenever that route is actually built, so it doesn't need
-re-litigating at that point.
+Originally scoped to Production Layout Builder's scheduling engine
+before that route existed. **Now implemented** — see
+`dieCutterToFolderGluerStart()` in
+`src/app/production-layout/scheduling.ts`, and the Production Layout
+Builder entry under "Routes migrated" for how it was verified (a
+standalone hand-checkable test harness before ever touching a real
+order, then a live end-to-end synthetic-order test). Left in place
+below as the historical record of the decision and why it was made,
+not as an open question anymore.
 
 **Current code** (`app.py`'s `_next_working_day_start()`, cited as
 lines 1271-1284 — *not independently re-verified against source for
@@ -475,22 +525,21 @@ Cutter, starts the next calendar working day after the upstream stage's
   working-shift start by reusing the existing `apply_calendar_bounds()`
   logic — no new mechanism needed for that part.
 
-**What this means for implementation, when Production Layout Builder is
-built:** the scheduling function needs to branch by transition, not
-apply one uniform offset rule to every stage — Printing→Die Cutter
-keeps calling `_next_working_day_start()` unchanged, while
-Die Cutter→Folder Gluer instead computes `die_cutter_actual_start + 3
-hours` and passes that through `apply_calendar_bounds()`. No branching
-on `ups`, `isGarment()`, or any other job-type classification is
-needed for this specific transition — it's uniform across all jobs now
-that the scope question is settled.
+**How this was implemented:** the scheduling function branches by
+transition, not one uniform offset rule for every stage —
+Printing→Die Cutter still calls `nextWorkingDayStart()` (the
+`_next_working_day_start()` port) unchanged, while Die Cutter→Folder
+Gluer instead calls `dieCutterToFolderGluerStart()`, which computes
+`dieCutterActualStart + 3 hours` and passes that through
+`applyCalendarBounds()`. No branching on `ups`, `isGarment()`, or any
+other job-type classification — it's uniform across all jobs, per the
+resolved scope question above.
 
 ## Next up
 
 - Write the RLS policies `nav-config.ts` implies, so access control
   doesn't rest solely on the app layer.
-- Migrate the next Streamlit module: Raise Job Order (no upstream
-  dependency) or Production Layout Builder.
+- Migrate the last remaining Streamlit module: Raise Job Order.
 - Port `send_departmental_alert` + the `notify_*` functions into
   `backend/app/email.py` so Authorization Center's approve/reject
   notifications (currently omitted, see "What's NOT done yet") can be

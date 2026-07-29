@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { commitProductionPlan } from "./actions";
 
 const CURRENCY = "GH₵";
 const SHIFT_START_HOUR = 8;
@@ -264,7 +265,9 @@ function LayoutForm({ order }: { order: ApprovedOrderRow }) {
 
   const [override, setOverride] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
-  const [submittedPayload, setSubmittedPayload] = useState<Record<string, unknown> | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [committedCount, setCommittedCount] = useState<number | null>(null);
 
   function handleSubmit() {
     const missing: string[] = [];
@@ -276,27 +279,35 @@ function LayoutForm({ order }: { order: ApprovedOrderRow }) {
 
     setMissingFields(missing);
     if (missing.length > 0) {
-      setSubmittedPayload(null);
       return;
     }
 
-    const payload = {
-      name: jobName.trim(),
-      job_order_no: order.job_order_no,
-      sales_rep: salesRep.trim(),
-      start_date: startDate,
-      total_qty: totalQty,
-      type_id: ups,
-      total_val: totalVal,
-      components,
-      finishing_machines: finishingSelected,
-    };
+    setError(null);
+    setCommittedCount(null);
+    if (!order.job_order_no) {
+      setError("This order has no job_order_no — cannot schedule.");
+      return;
+    }
 
-    // Phase 1 only — validate and show what WOULD be submitted. Phase 2
-    // wires this payload into add_multi_part_job() (the real scheduler)
-    // and an actual jobs-table write; neither happens here.
-    console.log("Production Layout Builder — would submit:", payload);
-    setSubmittedPayload(payload);
+    startTransition(async () => {
+      const result = await commitProductionPlan({
+        orderId: order.id,
+        jobOrderNo: order.job_order_no as string,
+        name: jobName.trim(),
+        salesRep: salesRep.trim(),
+        startDate,
+        totalQty,
+        typeId: ups,
+        totalVal,
+        components,
+        finishingMachines: finishingSelected,
+      });
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setCommittedCount(result.recordCount ?? 0);
+      }
+    });
   }
 
   return (
@@ -450,19 +461,19 @@ function LayoutForm({ order }: { order: ApprovedOrderRow }) {
         </div>
       )}
 
+      {error && <div className="mt-4 text-sm font-semibold text-red-600">{error}</div>}
+
       <div className="mt-6">
-        <Button onClick={handleSubmit}>CALCULATE SCHEDULE &amp; COMMIT TO PRODUCTION PLAN</Button>
+        <Button disabled={isPending} onClick={handleSubmit}>
+          {isPending ? "CALCULATING SCHEDULE…" : "CALCULATE SCHEDULE & COMMIT TO PRODUCTION PLAN"}
+        </Button>
       </div>
 
-      {submittedPayload && (
-        <div className="mt-4 rounded-at border border-emerald-300 bg-emerald-50 px-4 py-3">
-          <div className="mb-2 text-sm font-bold text-emerald-800">
-            Validated — this is what would be submitted (Phase 1: not written to the database
-            yet; see browser console for the full payload).
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-emerald-950">
-            {JSON.stringify(submittedPayload, null, 2)}
-          </pre>
+      {committedCount !== null && (
+        <div className="mt-4 rounded-at border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          Production plan committed for &apos;{jobName}&apos; — {committedCount} machine stage
+          {committedCount === 1 ? "" : "s"} scheduled and written to Shop Floor Control. Order{" "}
+          {order.job_order_no} moved to &apos;In Production&apos;.
         </div>
       )}
     </div>
