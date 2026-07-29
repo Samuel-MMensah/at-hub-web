@@ -289,6 +289,66 @@ doc.
   went anywhere near a deployed/public backend, not after. Email
   sending and every future endpoint start with the auth check, not end
   with it.
+- **Reference `.py` source pulled in for porting (`app.py`, `rbac.py`,
+  `warehouse.py`-style files) goes in the repo root only, never inside
+  `backend/`.** A same-named `app.py` dropped inside `backend/` once
+  silently shadowed the real `backend/app/` package (an implicit
+  namespace package at the time — now hardened with `__init__.py`, but
+  that's defense in depth, not a reason to get casual about where these
+  files land) — `import app` resolved to the reference file instead of
+  the FastAPI app, breaking any fresh backend restart with no visible
+  symptom until it happened.
+
+## Open design question — Die Cutter to Folder Gluer scheduling
+
+Scoped entirely to Production Layout Builder / Raise Job Order's
+scheduling engine, which is last in the build sequence per existing
+project ordering (see "Next up"). **Documentation only — nothing here
+has been implemented.** Capturing it now, before that route is built,
+so the decision isn't lost or re-derived from scratch later.
+
+**Current code** (`app.py`'s `_next_working_day_start()`, cited as
+lines 1271-1284 — *not independently re-verified against source for
+this entry, since `app.py` isn't present in the repo right now; taken
+as given from the person who reported it*): every downstream stage,
+including Die Cutter after any press stage *and* Folder Gluer after Die
+Cutter, starts the next calendar working day after the upstream stage's
+**start** time. One uniform rule applied to every transition.
+
+**Real business rule** (confirmed directly by the business owner, not
+assumed):
+
+- **Printing → Die Cutter:** next working day after printing starts
+  (sheets need to dry overnight). This **matches** the current code —
+  no change needed for this leg.
+- **Die Cutter → Folder Gluer:** 3 hours after Die Cutter's actual
+  start time (enough cut stock accumulates to begin folding), **same
+  day** — not next-day. This **contradicts** the current code, which
+  currently applies the same next-day rule to this leg too.
+
+**Confirmed specifics for the 3-hour rule:**
+
+- Measured from Die Cutter's actual start time — the same reference
+  point the existing next-day rule already uses elsewhere in the
+  codebase.
+- If the 3-hour mark falls outside working hours (before 8am, after
+  5pm) or on a weekend, snap forward to the next working-shift start —
+  reuse the existing `apply_calendar_bounds()` logic. No new mechanism
+  needed for this part.
+
+**Still open, blocking — does the 3-hour rule apply to:**
+
+  (a) every job that goes through Die Cutter → Folder Gluer, regardless
+      of job type, or
+  (b) only "skillet"/packaging jobs specifically (`ups > 1` — a
+      **different** classification axis than `isGarment()`/PRESS-vs-
+      GARMENT)
+
+This determines whether the eventual fix is a one-line change to the
+existing offset rule, or requires the scheduling function to branch on
+`ups` at the moment it computes this specific transition. **Not
+resolved — do not implement either version until this is answered
+explicitly.**
 
 ## Next up
 
