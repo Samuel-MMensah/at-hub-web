@@ -52,16 +52,46 @@ hosting/keys setup.
     throwaway insert/pay/delete cycle: balance GH₵300 → payment of
     GH₵300 → `deposit_amount` 200 → 500 confirmed exactly, `total_amount`
     and `status` untouched.
-  - **Still not built, not forgotten:** the Master Order Revision edit
-    form and Delete Master Order. Held on explicit product decisions
-    still needed: the edit form's re-routing side effect (saving
-    changes moves an order to `Pending Revision Approval` and re-routes
-    it to Authorization Center — a real workflow change, not just a
-    data edit) and a safer delete pattern than the original's
-    single-click, zero-confirmation delete (agreed direction: a
-    type-the-order-number-to-confirm gate before the delete button
-    enables — not yet built). A placeholder note is visible in the
-    order operations panel where these will go.
+  - **Master Order Revision, Delete Master Order, Reopen Order — built
+    and real**, closing out this section. Faithful port of
+    app.py:5150-5235 except where explicitly deviated (below).
+    - **Master Order Revision**: edits `qty_to_print`, `total_amount`,
+      `deposit_amount`, `type_of_print` (always this column — never
+      `print_type`, even though the garment branch of the category
+      dropdown's *initial* value falls back to `print_type` for
+      display, matching the source's own read/write split exactly) and
+      — the real, intentional part — always sets
+      `status = "Pending Revision Approval"` on save, re-routing the
+      order out of every Archive tab and into Authorization Center's
+      pending queue. Category dropdown branches on `isGarment()`:
+      `["DTF", "Flexi Screen Print", "UV-DTF", "SAV", "Embroidery"]` for
+      garment, `["OFFSET", "DIGITAL PRESS", "PACKAGING"]` otherwise,
+      appending the order's current value if it isn't already in that
+      list so it never silently disappears. Warning banner text ported
+      verbatim, not paraphrased. Verified live: a test order's fields
+      updated exactly as submitted, `status` flipped, the row vanished
+      from Archive's own status set and appeared in Authorization
+      Center's pending-queue query (both confirmed at the DB level and
+      visually in the running app) — `reviseOrder` revalidates both
+      `/archive` and `/authorization`.
+    - **Delete Master Order**: hard `.delete().eq('id', ...)`, matching
+      the source's actual behavior — but gated behind a
+      type-the-exact-order-number-to-confirm modal, a **deliberate
+      deviation from source** (which deletes with zero confirmation),
+      same category of change as this same session's double-submit
+      guard on Shop Floor's Operator Update. Re-validated server-side
+      too (fetches the row's real `job_order_no` and compares against
+      what was typed before deleting — a stale client reference
+      shouldn't be enough). Verified live: the confirm button stayed
+      disabled on a mismatched string, enabled only on an exact match,
+      and the row was confirmed actually gone from the database
+      afterward.
+    - **Reopen Order**: shown only when `status === 'Delivered'`,
+      reverts to `At Warehouse` — same status-only write as
+      Production Board's `sendToWarehouse` (no `warehouse_date`
+      attempt; already confirmed live in an earlier task that column
+      doesn't exist). Verified live: `status` reverted, `total_amount`
+      and `deposit_amount` both confirmed untouched.
 - `/shop-floor` (Shop Floor Control) — real, no role gate (matches
   `app.py`: any authenticated user). Three Gantt-style timelines
   (Production Pipeline across every in-flight order, a per-order stage
@@ -295,10 +325,6 @@ doc.
   service — PDF manifest generation"), email is not.
 - Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
   omitted until Raise Job Order exists.
-- Archive's Master Order Revision edit form and Delete Master Order —
-  see "Routes migrated" for why they're held, not just missing. (Record
-  Balance Payment and PDF export, the other two pieces of "Manage
-  Archived Orders", are done.)
 - Production Layout Builder and Raise Job Order are still Streamlit.
 - Authorization Center's four approve/reject notifications
   (`notify_order_approved`, `notify_needs_scheduling`,
