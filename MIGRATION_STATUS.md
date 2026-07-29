@@ -188,27 +188,51 @@ hosting/keys setup.
     `contract_value` split evenly across all 3 stages, single
     `tracking_id` shared across the whole job. Test order and its
     `jobs` rows deleted and confirmed gone afterward.
-- `/raise-order` (Raise Job Order) — **Phase 1 only, real but no
+- `/raise-order` (Raise Job Order) — **Phases 1-2 only, real but no
   write yet.** No role gate (matches app.py: any authenticated user,
   same as Production Board/Shop Floor Control — unlike Authorization
   Center/Archive/Production Layout Builder's `is_admin` gate).
-  - **Phase 1 — built, this is what's live at `/raise-order` right
-    now**: the New Press cart — item form (every field from
+  - **Phase 1 — New Press cart, built**: item form (every field from
     `add_cart_item_form`, app.py:3531-3624), add/edit-in-place/remove
     cart state, running total/deposit sums, an outstanding-balance
     indicator, and shared client name/phone that persists across cart
     items the way `cart_client_name`/`cart_client_phone` do in the
-    source. Genuine client-side React state only — no Supabase read or
-    write anywhere in this phase. "SUBMIT ... FOR MANAGEMENT APPROVAL"
-    renders as a disabled `ghost`-variant placeholder (this app's
-    established "coming soon" convention), not real functionality yet.
-  - **Not built yet — later phases, not forgotten**: Phase 2 (Garment
-    cart — a near-identical parallel form with its own field set),
-    Phase 3 (the actual batch submit: `parent_group_id` generation,
-    LPO/sample file upload, 30-day terms, sales rep, the real
-    `job_orders` insert), Phase 4 (Modify & Resubmit — the rejected-order
-    correction flow, see "What's NOT done yet"), Phase 5 (the "Quick-fill
-    from past customer" convenience lookup, `get_recent_customers()`).
+    source.
+  - **Phase 2 — New Garment cart, built**: same state-management
+    pattern, mirrored, with `add_garment_cart_item_form`'s own field set
+    (app.py:3900-4210) — entirely separate cart state from Press
+    (`garment_cart_items`/`garment_cart_client_name`/
+    `garment_cart_client_phone` in the source, matched here by a
+    second, independent set of React state, not a shared one). A single
+    Department dropdown (`app.py:3454-3467`, `["PRESS","GARMENT"]`)
+    gates which cart renders — the source's actual switching mechanism,
+    not a route split invented for this port. Deliberate inconsistencies
+    between the two forms were verified against source and preserved,
+    not unified: Garment's Material Source option order is reversed
+    (Company first, not Customer first); Garment's Delivery Mode uses
+    "Customer Pick-up" where Press uses "Client Pickup"; Garment's Print
+    Size/Finished Size are fixed dropdowns where Press's equivalents are
+    free text (and therefore not run through `sanitizeString`, unlike
+    Press's); Garment's edit-mode button/banner carry extra
+    💾/✏️ emoji Press's don't; `print_type`/`type_of_print` and
+    `finished_print_size`/`yardage` are each written twice with the same
+    value on a Garment item; `material_description_rows` (a
+    newline-split breakdown for a future PDF consumer) exists only
+    in-memory, matching the source's own "Python-only; remove before
+    Supabase insert" comment — never meant to reach the database
+    directly, Phase 3 or otherwise.
+  - Both phases: genuine client-side React state only — no Supabase
+    read or write anywhere yet. "SUBMIT ... FOR MANAGEMENT APPROVAL"
+    renders as a disabled `ghost`-variant placeholder on both carts
+    (this app's established "coming soon" convention), not real
+    functionality yet.
+  - **Not built yet — later phases, not forgotten**: Phase 3 (the
+    actual batch submit: `parent_group_id` generation, LPO/sample file
+    upload, 30-day terms, sales rep, the real `job_orders` insert — for
+    both departments), Phase 4 (Modify & Resubmit — the rejected-order
+    correction flow, see "What's NOT done yet"), Phase 5 (the
+    "Quick-fill from past customer" convenience lookup,
+    `get_recent_customers()`).
 
 ## Routes still in Streamlit
 
