@@ -442,13 +442,15 @@ doc.
   the FastAPI app, breaking any fresh backend restart with no visible
   symptom until it happened.
 
-## Open design question — Die Cutter to Folder Gluer scheduling
+## Resolved design decision — Die Cutter to Folder Gluer scheduling
 
 Scoped entirely to Production Layout Builder / Raise Job Order's
-scheduling engine, which is last in the build sequence per existing
-project ordering (see "Next up"). **Documentation only — nothing here
-has been implemented.** Capturing it now, before that route is built,
-so the decision isn't lost or re-derived from scratch later.
+scheduling engine, which hasn't been built yet (last in the build
+sequence per existing project ordering — see "Next up"). **Still
+documentation only — nothing here is implemented.** The decision below
+was previously open and blocking; it is now resolved and ready to
+implement whenever that route is actually built, so it doesn't need
+re-litigating at that point.
 
 **Current code** (`app.py`'s `_next_working_day_start()`, cited as
 lines 1271-1284 — *not independently re-verified against source for
@@ -458,40 +460,30 @@ including Die Cutter after any press stage *and* Folder Gluer after Die
 Cutter, starts the next calendar working day after the upstream stage's
 **start** time. One uniform rule applied to every transition.
 
-**Real business rule** (confirmed directly by the business owner, not
-assumed):
+**Final rule set** (confirmed directly by the business owner):
 
 - **Printing → Die Cutter:** next working day after printing starts
   (sheets need to dry overnight). This **matches** the current code —
-  no change needed for this leg.
-- **Die Cutter → Folder Gluer:** 3 hours after Die Cutter's actual
-  start time (enough cut stock accumulates to begin folding), **same
-  day** — not next-day. This **contradicts** the current code, which
-  currently applies the same next-day rule to this leg too.
+  `_next_working_day_start()` already gets this leg right, **no change
+  needed** here.
+- **Die Cutter → Folder Gluer, for EVERY job that goes through this
+  transition** (not just skillet/packaging jobs — the earlier open
+  question of "all jobs vs. `ups > 1` only" is resolved in favor of
+  **all jobs**, regardless of type): 3 hours after Die Cutter's actual
+  start time, **same day** — not next-day. If that 3-hour mark falls
+  outside working hours or on a weekend, snap forward to the next
+  working-shift start by reusing the existing `apply_calendar_bounds()`
+  logic — no new mechanism needed for that part.
 
-**Confirmed specifics for the 3-hour rule:**
-
-- Measured from Die Cutter's actual start time — the same reference
-  point the existing next-day rule already uses elsewhere in the
-  codebase.
-- If the 3-hour mark falls outside working hours (before 8am, after
-  5pm) or on a weekend, snap forward to the next working-shift start —
-  reuse the existing `apply_calendar_bounds()` logic. No new mechanism
-  needed for this part.
-
-**Still open, blocking — does the 3-hour rule apply to:**
-
-  (a) every job that goes through Die Cutter → Folder Gluer, regardless
-      of job type, or
-  (b) only "skillet"/packaging jobs specifically (`ups > 1` — a
-      **different** classification axis than `isGarment()`/PRESS-vs-
-      GARMENT)
-
-This determines whether the eventual fix is a one-line change to the
-existing offset rule, or requires the scheduling function to branch on
-`ups` at the moment it computes this specific transition. **Not
-resolved — do not implement either version until this is answered
-explicitly.**
+**What this means for implementation, when Production Layout Builder is
+built:** the scheduling function needs to branch by transition, not
+apply one uniform offset rule to every stage — Printing→Die Cutter
+keeps calling `_next_working_day_start()` unchanged, while
+Die Cutter→Folder Gluer instead computes `die_cutter_actual_start + 3
+hours` and passes that through `apply_calendar_bounds()`. No branching
+on `ups`, `isGarment()`, or any other job-type classification is
+needed for this specific transition — it's uniform across all jobs now
+that the scope question is settled.
 
 ## Next up
 
