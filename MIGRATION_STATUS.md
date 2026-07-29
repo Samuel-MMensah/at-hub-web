@@ -35,16 +35,33 @@ hosting/keys setup.
     right now:** the tabbed table view (Approved / In Production /
     Ready for Collection / Delivered), per-tab CSV export. Fully
     read-only, no write actions.
-  - **"Manage Archived Orders" — deliberately not built yet, not
-    forgotten.** Record Balance Payment, the Master Order Revision edit
-    form, and Delete Master Order are held on explicit product
-    decisions still needed: the edit form's re-routing side effect
-    (saving changes moves an order to `Pending Revision Approval` and
-    re-routes it to Authorization Center — a real workflow change, not
-    just a data edit) and a safer delete pattern than the original's
+  - **"Manage Archived Orders" — order-selection panel, built and
+    real:** search (order number or customer name) narrowing a
+    dropdown of candidates from the same `orders` already fetched for
+    the tabs above (no new query), select an order to open its
+    operations panel. Real write: Record Balance Payment — same
+    cumulative-deposit contract as Dispatch's `recordPayment`
+    (`newDepositTotal = deposit + payAmt`, not the raw amount),
+    replicated rather than imported into `src/app/archive/actions.ts`
+    since importing Dispatch's action would `revalidatePath("/dispatch")`
+    and leave Archive's own data stale — same logic, gated to Archive's
+    own `ADMIN_ROLES`-only access, revalidates `/archive` instead.
+    "Fully Paid" banner when balance is already 0. PDF export reuses
+    `PdfPreviewButton` unchanged (same component already proven for
+    Production Board / My Order Tracker). Verified against a live
+    throwaway insert/pay/delete cycle: balance GH₵300 → payment of
+    GH₵300 → `deposit_amount` 200 → 500 confirmed exactly, `total_amount`
+    and `status` untouched.
+  - **Still not built, not forgotten:** the Master Order Revision edit
+    form and Delete Master Order. Held on explicit product decisions
+    still needed: the edit form's re-routing side effect (saving
+    changes moves an order to `Pending Revision Approval` and re-routes
+    it to Authorization Center — a real workflow change, not just a
+    data edit) and a safer delete pattern than the original's
     single-click, zero-confirmation delete (agreed direction: a
     type-the-order-number-to-confirm gate before the delete button
-    enables — not yet built).
+    enables — not yet built). A placeholder note is visible in the
+    order operations panel where these will go.
 - `/shop-floor` (Shop Floor Control) — real, no role gate (matches
   `app.py`: any authenticated user). Read-only: three Gantt-style
   timelines (Production Pipeline across every in-flight order, a
@@ -240,9 +257,9 @@ doc.
 - `PdfPreviewButton` (`src/components/ui/pdf-preview-button.tsx`) —
   fetches the PDF as a blob (with the `Authorization: Bearer` token from
   `supabase.auth.getSession()`), renders it in an `<iframe>` modal with
-  a real Download button. Used by Production Board and My Order
-  Tracker; ready to wire into Archive once its "Manage Archived Orders"
-  section (still deferred — see Archive's own scope notes) gets built.
+  a real Download button. Used by Production Board, My Order Tracker,
+  and now Archive's "Manage Archived Orders" panel — unchanged, no
+  Archive-specific modifications needed.
 
 ## What's NOT done yet
 
@@ -255,9 +272,10 @@ doc.
   service — PDF manifest generation"), email is not.
 - Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
   omitted until Raise Job Order exists.
-- Archive's "Manage Archived Orders" section (payment recording, edit
-  form, delete) — see "Routes migrated" for why it's held, not just
-  missing.
+- Archive's Master Order Revision edit form and Delete Master Order —
+  see "Routes migrated" for why they're held, not just missing. (Record
+  Balance Payment and PDF export, the other two pieces of "Manage
+  Archived Orders", are done.)
 - Production Layout Builder and Raise Job Order are still Streamlit.
 - Authorization Center's four approve/reject notifications
   (`notify_order_approved`, `notify_needs_scheduling`,
