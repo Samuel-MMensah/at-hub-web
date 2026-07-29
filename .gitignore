@@ -54,3 +54,8 @@ backend/*.egg-info/
 # editor
 .vscode/
 .idea/
+
+# Reference-only source files at repo root (never part of this
+# Next.js app) — matched by pattern so any future reference
+# extraction is automatically excluded, not just today's known list.
+/*.py

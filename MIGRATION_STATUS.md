@@ -63,11 +63,34 @@ hosting/keys setup.
     enables — not yet built). A placeholder note is visible in the
     order operations panel where these will go.
 - `/shop-floor` (Shop Floor Control) — real, no role gate (matches
-  `app.py`: any authenticated user). Read-only: three Gantt-style
-  timelines (Production Pipeline across every in-flight order, a
-  per-order stage drill-down, whole-shop Machine Utilisation) sharing
-  one `GanttChart` component. No write action (Operator Update is not
-  built).
+  `app.py`: any authenticated user). Three Gantt-style timelines
+  (Production Pipeline across every in-flight order, a per-order stage
+  drill-down, whole-shop Machine Utilisation) sharing one `GanttChart`
+  component. Real write: Operator Update (`src/app/shop-floor/actions.ts`),
+  a faithful port of `update_stage_status()` (app.py:1437-1492) — the
+  highest-risk write in the app. Sets a stage's `stage_status`
+  (In Progress / Delayed / On Hold / Complete — never reverts to
+  Scheduled); Delayed/Complete always supply a `revised_finish`
+  (combining the picked date with the operator's current wall-clock
+  time, labeled UTC without converting — the source's own quirk,
+  ported as-is); Complete also writes `actual_finish`. If the shift
+  against the stage's own `planned_finish` baseline is ≥ 60 seconds,
+  every downstream (`sequence_no >` this stage's) sibling that isn't
+  already Complete gets its `revised_finish` shifted by the same delta
+  (and `revised_start` too, if currently Scheduled); a positive delta
+  (pushed later) also flips those siblings to Delayed, a negative delta
+  (pulled earlier) shifts dates only. Verified against a live synthetic
+  3-stage test order, not just typecheck/lint: delaying stage 1 by
+  ~94 hours shifted both downstream siblings' `revised_finish` and
+  `revised_start` by that exact delta (to the millisecond) and flipped
+  both to Delayed. Negative-delta path (a stage marked Complete with a
+  finish time *before* its planned_finish) verified separately on a
+  second synthetic order: pulling stage 1 back by ~98 hours shifted both
+  siblings' `revised_finish`/`revised_start` backward by that exact
+  delta and left their `stage_status` completely untouched (one stayed
+  Scheduled, one stayed On Hold) — confirming Delayed is only ever
+  applied on a push, never a pull. See git history for the session
+  this landed in.
 - `/authorization` (Authorization Center) — real, admin-only
   (`ADMIN_ROLES`, matches `is_admin`). Search, status filter,
   batch/group rendering by `parent_group_id`, 40-groups-per-page
@@ -284,6 +307,39 @@ doc.
 
 ## Known gaps
 
+- **Operator Update's cascade compounds if the same stage is submitted
+  twice in a row — mitigated at the UI layer, not database-enforced.**
+  Discovered live while verifying the negative-delta path: a sibling's
+  baseline is `revised_finish ?? planned_finish` (an exact port of the
+  source), so a second submission reuses the first one's already-shifted
+  sibling values as its new baseline and shifts them again on top — not
+  a bug, the Python original has the identical baseline preference and
+  would compound the same way.
+  Closed the common case (deliberate improvement over the source, same
+  category as Archive's delete-confirmation gate): `OperatorUpdatePanel`
+  now guards `handleSubmit` with a `useRef` flag checked and set
+  synchronously before `startTransition` fires, reset in a `finally`
+  once the action settles. `isPending` alone (the convention every other
+  write button in this app uses) wasn't enough — its disabled state
+  lags the click by a render cycle, so two clicks close enough together
+  can both fire before React commits it; a plain ref has no such window
+  since it isn't gated by a render. Verified live twice: a **sequential**
+  double-click (second click after the first's success message had
+  already rendered) correctly still compounds — that's two deliberate
+  separate actions, not a race, and is expected to apply the update
+  twice. A **genuine simultaneous** double-click (both clicks landing
+  before any response) produced clean single-run math on both siblings,
+  confirming the second click was truly dropped, not just visually
+  disabled while still submittable.
+  This is a client-side re-entrancy guard, not idempotency at the write
+  layer — `update_stage_status` itself is unchanged and has no
+  protection against two independent requests that both reach the
+  server essentially simultaneously (a fast enough machine-gun click
+  past real network latency, or two separate browser tabs/devices
+  acting on the same stage at once, could theoretically still race past
+  this). It closes the realistic single-operator, single-tab case; real
+  write-layer idempotency (e.g. a version/timestamp check in the update)
+  would be a separate, larger fix if this ever needs to be airtight.
 - `parseTimestamptz()` (`src/lib/parse-timestamptz.ts`, shared — not
   local to one route, since Production Board and Shop Floor Control
   will need the same `finish_time`/`revised_finish` handling; currently
