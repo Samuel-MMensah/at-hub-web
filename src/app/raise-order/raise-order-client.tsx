@@ -1,9 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
+import { submitBatch } from "./actions";
 
 const CURRENCY = "GH₵";
+
+// Ports SALES_REP_EMAILS' keys (app.py:126-136) — the dropdown only
+// ever shows/stores the NAME (a dict key), never the email; the email
+// lookup is a separate concern this route doesn't need.
+const SALES_REP_NAMES = [
+  "Mabel Ampofo",
+  "Daphne Sarpong",
+  "Reginald Aidam",
+  "Charles Adoo",
+  "Isaac Kum",
+  "Bertha Tackie",
+  "Christian Mante",
+  "Jacqueline Afful",
+  "Mohammed Seidu Bunyamin",
+];
+const SALES_REP_SENTINEL = "— None / Walk-in —";
+
+// Matches f"PG-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(1000,9999)}"
+// (Press) / the "GPG-" equivalent (Garment) exactly. Generated
+// client-side, per this task's explicit instruction — unlike
+// Production Layout Builder's anchor_start (a scheduling-critical
+// value where server-authoritative "now" mattered), this is just an
+// opaque batch identifier, and the SAME client-generated value is
+// threaded through both the file-upload storage path and the
+// parent_group_id column so the two can never drift apart.
+function generateParentGroupId(prefix: "PG" | "GPG"): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `${prefix}-${datePart}-${timePart}-${rand}`;
+}
 
 // Ports sanitize_string() from app.py:774-789 exactly: strips only the
 // characters that can break out of an HTML tag/attribute (< > " and
@@ -50,6 +85,125 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
     <div>
       <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">{label}</label>
       {children}
+    </div>
+  );
+}
+
+// Shared by both carts — identical fields/behavior in the source for
+// Press and Garment alike (app.py:3695-3718 / app.py:4100-4123), unlike
+// the item forms themselves which genuinely differ per department.
+interface AttachmentsTermsState {
+  lpoFile: File | null;
+  sampleFile: File | null;
+  sampleAttached: "No" | "Yes";
+  sampleWith: string;
+  is30Day: boolean;
+  salesRep: string; // "" represents the "— None / Walk-in —" sentinel
+  termsNotes: string;
+}
+
+function blankAttachmentsTerms(): AttachmentsTermsState {
+  return {
+    lpoFile: null,
+    sampleFile: null,
+    sampleAttached: "No",
+    sampleWith: "",
+    is30Day: false,
+    salesRep: "",
+    termsNotes: "",
+  };
+}
+
+function AttachmentsAndTermsSection({
+  state,
+  setState,
+  cartHasBalance,
+}: {
+  state: AttachmentsTermsState;
+  setState: React.Dispatch<React.SetStateAction<AttachmentsTermsState>>;
+  cartHasBalance: boolean;
+}) {
+  return (
+    <div className="mt-6">
+      <div className="mb-3 text-base font-bold text-at-navy">
+        📎 Attachments &amp; Terms — Applies to This Whole Batch
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="Upload LPO (optional) — goes to MD/FM">
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setState((s) => ({ ...s, lpoFile: e.target.files?.[0] ?? null }))}
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+        <FormField label="Upload Sample Photo (optional) — goes to the department">
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setState((s) => ({ ...s, sampleFile: e.target.files?.[0] ?? null }))}
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="Sample Attached?">
+          <select
+            value={state.sampleAttached}
+            onChange={(e) => setState((s) => ({ ...s, sampleAttached: e.target.value as "No" | "Yes" }))}
+            className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          >
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </select>
+        </FormField>
+        <FormField label="Sample With (required if Yes)">
+          <input
+            type="text"
+            value={state.sampleWith}
+            onChange={(e) => setState((s) => ({ ...s, sampleWith: e.target.value }))}
+            placeholder="e.g. Front Desk, With Client, Production"
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-sm text-at-slate">
+          <input
+            type="checkbox"
+            checked={state.is30Day}
+            onChange={(e) => setState((s) => ({ ...s, is30Day: e.target.checked }))}
+          />
+          30-Day Credit Terms job
+        </label>
+        <FormField label="Sales / Marketing Rep (who brought this job)">
+          <select
+            value={state.salesRep}
+            onChange={(e) => setState((s) => ({ ...s, salesRep: e.target.value }))}
+            className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          >
+            <option value="">{SALES_REP_SENTINEL}</option>
+            {SALES_REP_NAMES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </FormField>
+      </div>
+      {cartHasBalance && (
+        <div className="mt-3">
+          <FormField label="Payment Terms Notes — this batch isn't fully paid; explain the arrangement for MD/FM">
+            <textarea
+              value={state.termsNotes}
+              onChange={(e) => setState((s) => ({ ...s, termsNotes: e.target.value }))}
+              placeholder="e.g. Client to pay balance on collection; LPO attached; verbal agreement with MD on..."
+              rows={2}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+      )}
     </div>
   );
 }
@@ -227,6 +381,12 @@ function PressCart({ userEmail }: { userEmail: string }) {
   const [form, setForm] = useState<ItemFormState>(() => blankItemForm(today));
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
+  const [attachments, setAttachments] = useState<AttachmentsTermsState>(blankAttachmentsTerms);
+  const [isSubmitting, startSubmitTransition] = useTransition();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
+  const [confirmedBatch, setConfirmedBatch] = useState<Record<string, unknown>[] | null>(null);
+
   function toggleBinding(opt: string) {
     setForm((f) => {
       const next = new Set(f.binding);
@@ -329,6 +489,52 @@ function PressCart({ userEmail }: { userEmail: string }) {
   const cartDeposit = cartItems.reduce((sum, it) => sum + it.deposit_amount, 0);
   const cartHasBalance = cartItems.some((it) => it.total_amount !== it.deposit_amount);
   const isEditing = editingIdx !== null;
+
+  // Mirrors the SUBMIT button's handler (app.py:3722-3793) exactly,
+  // including its own pre-checks — re-validated server-side too, since
+  // the Server Action is a real network boundary.
+  function handleSubmitBatch() {
+    setSubmitError(null);
+    setSubmitWarnings([]);
+    if (!cartClientName.trim() || !cartClientPhone.trim()) {
+      setSubmitError("Client name and telephone must be set before submitting the batch.");
+      return;
+    }
+    if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
+      setSubmitError("Sample is marked attached — enter who has it before submitting.");
+      return;
+    }
+
+    const pgid = generateParentGroupId("PG");
+    const fd = new FormData();
+    fd.set("pgid", pgid);
+    fd.set("clientName", cartClientName);
+    fd.set("clientPhone", cartClientPhone);
+    fd.set("items", JSON.stringify(cartItems));
+    fd.set("sampleAttached", attachments.sampleAttached);
+    fd.set("sampleWith", attachments.sampleWith);
+    fd.set("is30Day", String(attachments.is30Day));
+    fd.set("termsNotes", attachments.termsNotes);
+    fd.set("salesRep", attachments.salesRep);
+    if (attachments.lpoFile) fd.set("lpoFile", attachments.lpoFile);
+    if (attachments.sampleFile) fd.set("sampleFile", attachments.sampleFile);
+
+    startSubmitTransition(async () => {
+      const result = await submitBatch(fd);
+      if (result.error) {
+        setSubmitError(result.error);
+        if (result.warnings) setSubmitWarnings(result.warnings);
+        return;
+      }
+      setConfirmedBatch(result.submitted ?? []);
+      if (result.warnings) setSubmitWarnings(result.warnings);
+      setCartItems([]);
+      setCartClientName("");
+      setCartClientPhone("");
+      setEditingIdx(null);
+      setAttachments(blankAttachmentsTerms());
+    });
+  }
 
   return (
     <div>
@@ -637,13 +843,64 @@ function PressCart({ userEmail }: { userEmail: string }) {
             )}
           </div>
 
+          <AttachmentsAndTermsSection state={attachments} setState={setAttachments} cartHasBalance={cartHasBalance} />
+
+          {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
+          {submitWarnings.length > 0 &&
+            submitWarnings.map((w, i) => (
+              <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+                {w}
+              </div>
+            ))}
+
           <div className="mt-4 flex gap-3">
-            <Button variant="ghost" fullWidth>
-              SUBMIT {cartItems.length} ITEM(S) FOR MANAGEMENT APPROVAL — coming in Phase 3
+            <Button disabled={isSubmitting} onClick={handleSubmitBatch}>
+              {isSubmitting ? "SUBMITTING…" : `SUBMIT ${cartItems.length} ITEM(S) FOR MANAGEMENT APPROVAL`}
             </Button>
-            <Button variant="secondary" onClick={clearCart}>
+            <Button variant="secondary" onClick={clearCart} disabled={isSubmitting}>
               🗑 Clear Cart
             </Button>
+          </div>
+        </div>
+      )}
+
+      {confirmedBatch && confirmedBatch.length > 0 && (
+        <div className="mt-6">
+          <div className="rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 p-5">
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-green-800">
+              Batch Submission Confirmed
+            </div>
+            <div className="text-lg font-extrabold text-at-navy">
+              {confirmedBatch.length} item(s) deposited in management authorization ledger
+            </div>
+            <div className="mt-1 text-sm text-green-700">
+              Batch Ref: <strong>{String(confirmedBatch[0].parent_group_id ?? "—")}</strong> &nbsp;·&nbsp; Client:{" "}
+              <strong>{String(confirmedBatch[0].customer_name ?? "—")}</strong>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-col gap-2">
+            {confirmedBatch.map((ticket, i) => {
+              const desc = String(ticket.job_description ?? "");
+              const preview = desc.length > 60 ? `${desc.slice(0, 60)}…` : desc;
+              return (
+                <div
+                  key={i}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-at border border-at-border border-l-4 border-l-green-500 bg-at-white px-4 py-3"
+                >
+                  <div>
+                    <div className="text-sm font-bold text-at-navy">
+                      Item {i + 1}: {preview}
+                    </div>
+                    <div className="mt-1 text-xs text-at-slate">
+                      Ref: <strong className="text-at-accent">{String(ticket.job_order_no ?? "PENDING")}</strong>{" "}
+                      &nbsp;·&nbsp; {Number(ticket.qty_to_print ?? 0).toLocaleString()} units &nbsp;·&nbsp;{" "}
+                      {String(ticket.type_of_print ?? "")} &nbsp;·&nbsp; {money(Number(ticket.total_amount ?? 0))}
+                    </div>
+                  </div>
+                  <PdfPreviewButton orderId={Number(ticket.id)} label="📄 Export PDF" />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -852,6 +1109,12 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
   const [form, setForm] = useState<GarmentItemFormState>(() => blankGarmentItemForm(today));
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
+  const [attachments, setAttachments] = useState<AttachmentsTermsState>(blankAttachmentsTerms);
+  const [isSubmitting, startSubmitTransition] = useTransition();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
+  const [confirmedBatch, setConfirmedBatch] = useState<Record<string, unknown>[] | null>(null);
+
   function startEditing(idx: number) {
     setEditingIdx(idx);
     setForm(garmentItemFormFromCartItem(cartItems[idx]));
@@ -941,6 +1204,52 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
   const cartDeposit = cartItems.reduce((sum, it) => sum + it.deposit_amount, 0);
   const cartHasBalance = cartItems.some((it) => it.total_amount !== it.deposit_amount);
   const isEditing = editingIdx !== null;
+
+  // Mirrors the Garment SUBMIT button's handler (app.py:4127-4192)
+  // exactly, including its own pre-checks — re-validated server-side
+  // too, since the Server Action is a real network boundary.
+  function handleSubmitBatch() {
+    setSubmitError(null);
+    setSubmitWarnings([]);
+    if (!cartClientName.trim() || !cartClientPhone.trim()) {
+      setSubmitError("Client name and telephone must be set before submitting the batch.");
+      return;
+    }
+    if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
+      setSubmitError("Sample is marked attached — enter who has it before submitting.");
+      return;
+    }
+
+    const pgid = generateParentGroupId("GPG");
+    const fd = new FormData();
+    fd.set("pgid", pgid);
+    fd.set("clientName", cartClientName);
+    fd.set("clientPhone", cartClientPhone);
+    fd.set("items", JSON.stringify(cartItems));
+    fd.set("sampleAttached", attachments.sampleAttached);
+    fd.set("sampleWith", attachments.sampleWith);
+    fd.set("is30Day", String(attachments.is30Day));
+    fd.set("termsNotes", attachments.termsNotes);
+    fd.set("salesRep", attachments.salesRep);
+    if (attachments.lpoFile) fd.set("lpoFile", attachments.lpoFile);
+    if (attachments.sampleFile) fd.set("sampleFile", attachments.sampleFile);
+
+    startSubmitTransition(async () => {
+      const result = await submitBatch(fd);
+      if (result.error) {
+        setSubmitError(result.error);
+        if (result.warnings) setSubmitWarnings(result.warnings);
+        return;
+      }
+      setConfirmedBatch(result.submitted ?? []);
+      if (result.warnings) setSubmitWarnings(result.warnings);
+      setCartItems([]);
+      setCartClientName("");
+      setCartClientPhone("");
+      setEditingIdx(null);
+      setAttachments(blankAttachmentsTerms());
+    });
+  }
 
   return (
     <div>
@@ -1290,13 +1599,67 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
             )}
           </div>
 
+          <AttachmentsAndTermsSection state={attachments} setState={setAttachments} cartHasBalance={cartHasBalance} />
+
+          {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
+          {submitWarnings.length > 0 &&
+            submitWarnings.map((w, i) => (
+              <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+                {w}
+              </div>
+            ))}
+
           <div className="mt-4 flex gap-3">
-            <Button variant="ghost" fullWidth>
-              🚀 SUBMIT {cartItems.length} GARMENT ITEM(S) FOR MANAGEMENT APPROVAL — coming in Phase 3
+            <Button disabled={isSubmitting} onClick={handleSubmitBatch}>
+              {isSubmitting
+                ? "SUBMITTING…"
+                : `🚀 SUBMIT ${cartItems.length} GARMENT ITEM(S) FOR MANAGEMENT APPROVAL`}
             </Button>
-            <Button variant="secondary" onClick={clearCart}>
+            <Button variant="secondary" onClick={clearCart} disabled={isSubmitting}>
               🗑 Clear Cart
             </Button>
+          </div>
+        </div>
+      )}
+
+      {confirmedBatch && confirmedBatch.length > 0 && (
+        <div className="mt-6">
+          <div className="rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 p-5">
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-green-800">
+              Garment Batch Submission Confirmed
+            </div>
+            <div className="text-lg font-extrabold text-at-navy">
+              {confirmedBatch.length} garment item(s) deposited in management authorization ledger
+            </div>
+            <div className="mt-1 text-sm text-green-700">
+              Batch Ref: <strong>{String(confirmedBatch[0].parent_group_id ?? "—")}</strong> &nbsp;·&nbsp; Client:{" "}
+              <strong>{String(confirmedBatch[0].customer_name ?? "—")}</strong>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-col gap-2">
+            {confirmedBatch.map((ticket, i) => {
+              const desc = String(ticket.job_description ?? "");
+              const preview = desc.length > 60 ? `${desc.slice(0, 60)}…` : desc;
+              return (
+                <div
+                  key={i}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-at border border-at-border border-l-4 border-l-amber-500 bg-at-white px-4 py-3"
+                >
+                  <div>
+                    <div className="text-sm font-bold text-at-navy">
+                      Item {i + 1}: {preview}
+                    </div>
+                    <div className="mt-1 text-xs text-at-slate">
+                      Ref:{" "}
+                      <strong style={{ color: "#d97706" }}>{String(ticket.job_order_no ?? "PENDING")}</strong>{" "}
+                      &nbsp;·&nbsp; {Number(ticket.qty_to_print ?? 0).toLocaleString()} units &nbsp;·&nbsp;{" "}
+                      {String(ticket.print_type ?? "")} &nbsp;·&nbsp; {money(Number(ticket.total_amount ?? 0))}
+                    </div>
+                  </div>
+                  <PdfPreviewButton orderId={Number(ticket.id)} label="📄 Export Garment PDF" />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

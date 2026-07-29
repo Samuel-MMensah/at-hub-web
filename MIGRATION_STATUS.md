@@ -188,8 +188,8 @@ hosting/keys setup.
     `contract_value` split evenly across all 3 stages, single
     `tracking_id` shared across the whole job. Test order and its
     `jobs` rows deleted and confirmed gone afterward.
-- `/raise-order` (Raise Job Order) — **Phases 1-2 only, real but no
-  write yet.** No role gate (matches app.py: any authenticated user,
+- `/raise-order` (Raise Job Order) — **Phases 1-3, real, including a
+  real write.** No role gate (matches app.py: any authenticated user,
   same as Production Board/Shop Floor Control — unlike Authorization
   Center/Archive/Production Layout Builder's `is_admin` gate).
   - **Phase 1 — New Press cart, built**: item form (every field from
@@ -221,18 +221,72 @@ hosting/keys setup.
     in-memory, matching the source's own "Python-only; remove before
     Supabase insert" comment — never meant to reach the database
     directly, Phase 3 or otherwise.
-  - Both phases: genuine client-side React state only — no Supabase
-    read or write anywhere yet. "SUBMIT ... FOR MANAGEMENT APPROVAL"
-    renders as a disabled `ghost`-variant placeholder on both carts
-    (this app's established "coming soon" convention), not real
-    functionality yet.
-  - **Not built yet — later phases, not forgotten**: Phase 3 (the
-    actual batch submit: `parent_group_id` generation, LPO/sample file
-    upload, 30-day terms, sales rep, the real `job_orders` insert — for
-    both departments), Phase 4 (Modify & Resubmit — the rejected-order
-    correction flow, see "What's NOT done yet"), Phase 5 (the
-    "Quick-fill from past customer" convenience lookup,
-    `get_recent_customers()`).
+  - **Phase 3 — real batch submit, built, for both departments**:
+    `src/app/raise-order/actions.ts`'s `submitBatch()`, one shared
+    Server Action for both carts (their cart items are already
+    job_orders-row-shaped by Phase 1/2, so the same action serves both).
+    Attachments & Terms section added to both carts (LPO/sample file
+    upload, Sample Attached/With, 30-Day Credit Terms checkbox, Sales
+    Rep dropdown — exact `SALES_REP_EMAILS` name list, verified fresh
+    from source rather than assumed — Payment Terms Notes shown only
+    when the batch has an outstanding balance). `parent_group_id`
+    generated client-side per this task's explicit instruction (opaque
+    batch identifier, not scheduling-critical — threaded through both
+    the storage upload path and the DB column so they can't drift
+    apart), `PG-`/`GPG-` prefix per department matching source exactly.
+    File uploads go through a new, reusable `uploadBatchFile()` helper
+    to the `job-attachments` Storage bucket (confirmed live to already
+    exist, public) — an upload failure warns but never blocks
+    submission, matching the source's own "order will still submit
+    without it" posture exactly. Notification is deferred/best-effort
+    like every other email-dependent action in this project (the
+    backend email endpoint still doesn't exist).
+    - **`job_order_no` generation — verified live before writing any
+      insert logic**: `job_orders.job_order_no` has a real Postgres
+      `DEFAULT` — `'P' || lpad(floor(random()*1000000)::text, 6, '0')`
+      — confirmed directly via the PostgREST OpenAPI schema and two
+      throwaway inserts that omitted the column entirely. The source's
+      `AT-`/`GT-` random fallback is purely an error-path safety net
+      for an empty insert response, not expected normal behavior — live
+      testing never exercised it; every row got a real `P######` value.
+    - **Deliberate deviation from source, not a faithful port**: one
+      bulk `insert([...rows]).select()` call per batch, replacing the
+      source's per-item loop (`for item in cart_items:
+      supabase.table('job_orders').insert(item).execute()`), which can
+      leave a partial batch inserted if a later item fails. Verified
+      live, twice: a 2-row array with mismatched keys was rejected by
+      PostgREST before reaching Postgres at all (`PGRST102`); a 2-row
+      array with matching keys and a genuine `NOT NULL` violation on
+      the second row was rejected by Postgres itself (`23502`) — in
+      both cases confirmed **zero rows persisted**, including the
+      otherwise-valid first row. No partial-batch cleanup logic is
+      needed as a result — either the whole batch lands or none of it
+      does.
+    - **End-to-end verified live**, in two passes: a single-item batch
+      (confirmed every shared field — `created_by` by email, `order_date`,
+      joined `payment_terms`, `sales_rep` stored by name, both file URLs
+      correctly null when nothing was attached) and a 3-item batch
+      (confirmed all three rows share one `parent_group_id` while each
+      gets its own distinct DB-generated `job_order_no`, and item-specific
+      fields vary correctly per row). Both test batches deleted and
+      confirmed gone afterward.
+    - **Cross-route handoff verified live**: a test order raised through
+      this route was confirmed to actually show up correctly in My Order
+      Tracker (own-orders read) and Authorization Center (pending-queue
+      read) — proving the write side and the two existing read sides
+      genuinely connect, not just each independently correct in
+      isolation. `PdfPreviewButton` on the post-submit confirmation panel
+      was confirmed to render a real PDF for a freshly created order
+      (not just that the component mounts) — the manifest generator
+      received enough real data from a brand-new order to succeed.
+      **Caveat**: this pass only exercised a single-item "batch" (1 row
+      landed, not the 2 items the check called for), so the multi-item
+      batch-header grouping UI in My Order Tracker/Authorization Center
+      specifically (`isMulti = group.length > 1`) wasn't visually
+      re-confirmed here — the underlying data-layer grouping mechanics
+      (shared `parent_group_id`, distinct `job_order_no` per item) were
+      already thoroughly verified separately in the 3-item batch test
+      above. Accepted as sufficient rather than re-run.
 
 ## Routes still in Streamlit
 
@@ -404,8 +458,16 @@ doc.
   fetches the PDF as a blob (with the `Authorization: Bearer` token from
   `supabase.auth.getSession()`), renders it in an `<iframe>` modal with
   a real Download button. Used by Production Board, My Order Tracker,
-  and now Archive's "Manage Archived Orders" panel — unchanged, no
-  Archive-specific modifications needed.
+  Archive's "Manage Archived Orders" panel, and now Raise Job Order's
+  post-submit confirmation panel (both departments) — unchanged, no
+  route-specific modifications needed.
+- Supabase Storage file uploads — genuinely new infrastructure, no
+  prior route wrote to Storage. `uploadBatchFile()` (local to
+  `src/app/raise-order/actions.ts` for now, only one caller) uploads to
+  the `job-attachments` bucket (confirmed live to already exist,
+  public) and returns a public URL, or a non-fatal warning string on
+  failure — never throws, matching the source's graceful-degradation
+  posture for LPO/sample attachments exactly.
 
 ## What's NOT done yet
 
@@ -418,9 +480,9 @@ doc.
   service — PDF manifest generation"), email is not.
 - Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
   Raise Job Order's own Phase 4 — see "Routes migrated".
-- Raise Job Order Phases 2-5 (Garment cart, batch submit, Modify &
-  Resubmit, quick-fill from past customer) — see "Routes migrated" for
-  the full phase breakdown.
+- Raise Job Order Phases 4-5 (Modify & Resubmit, quick-fill from past
+  customer) — see "Routes migrated" for the full phase breakdown.
+  Phases 1-3 (both carts, real batch submit) are done.
 - Authorization Center's four approve/reject notifications
   (`notify_order_approved`, `notify_needs_scheduling`,
   `send_departmental_alert`, `notify_order_rejected`) — deferred until
