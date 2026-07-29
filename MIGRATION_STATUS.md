@@ -188,10 +188,31 @@ hosting/keys setup.
     `contract_value` split evenly across all 3 stages, single
     `tracking_id` shared across the whole job. Test order and its
     `jobs` rows deleted and confirmed gone afterward.
+- `/raise-order` (Raise Job Order) — **Phase 1 only, real but no
+  write yet.** No role gate (matches app.py: any authenticated user,
+  same as Production Board/Shop Floor Control — unlike Authorization
+  Center/Archive/Production Layout Builder's `is_admin` gate).
+  - **Phase 1 — built, this is what's live at `/raise-order` right
+    now**: the New Press cart — item form (every field from
+    `add_cart_item_form`, app.py:3531-3624), add/edit-in-place/remove
+    cart state, running total/deposit sums, an outstanding-balance
+    indicator, and shared client name/phone that persists across cart
+    items the way `cart_client_name`/`cart_client_phone` do in the
+    source. Genuine client-side React state only — no Supabase read or
+    write anywhere in this phase. "SUBMIT ... FOR MANAGEMENT APPROVAL"
+    renders as a disabled `ghost`-variant placeholder (this app's
+    established "coming soon" convention), not real functionality yet.
+  - **Not built yet — later phases, not forgotten**: Phase 2 (Garment
+    cart — a near-identical parallel form with its own field set),
+    Phase 3 (the actual batch submit: `parent_group_id` generation,
+    LPO/sample file upload, 30-day terms, sales rep, the real
+    `job_orders` insert), Phase 4 (Modify & Resubmit — the rejected-order
+    correction flow, see "What's NOT done yet"), Phase 5 (the "Quick-fill
+    from past customer" convenience lookup, `get_recent_customers()`).
 
 ## Routes still in Streamlit
 
-Raise Job Order.
+None — every route now has at least a Phase 1 built in Next.js.
 
 ## Auth
 
@@ -286,9 +307,9 @@ Ports `app.py`'s "My Order Tracker" route (`get_all_db_job_orders_by_user()`
   /pdf/manifest` is live. See "Backend service — PDF manifest
   generation" below.
 - Modify & Resubmit — **omitted entirely this pass**. The original
-  hands off to Raise Job Order, which doesn't exist yet in this app;
-  this is a noted follow-up once that route is built, not a silently
-  dropped feature.
+  hands off to Raise Job Order's resubmit mode, which isn't built yet
+  (Raise Job Order's own Phase 4 — see "Routes migrated"); this is a
+  noted follow-up, not a silently dropped feature.
 
 Exact logic lives in `src/app/my-orders/page.tsx` and
 `src/app/my-orders/order-tracker-client.tsx` — these files are the
@@ -372,8 +393,10 @@ doc.
   (`NotImplementedError`) — PDF generation is done (see "Backend
   service — PDF manifest generation"), email is not.
 - Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
-  omitted until Raise Job Order exists.
-- Raise Job Order is still Streamlit.
+  Raise Job Order's own Phase 4 — see "Routes migrated".
+- Raise Job Order Phases 2-5 (Garment cart, batch submit, Modify &
+  Resubmit, quick-fill from past customer) — see "Routes migrated" for
+  the full phase breakdown.
 - Authorization Center's four approve/reject notifications
   (`notify_order_approved`, `notify_needs_scheduling`,
   `send_departmental_alert`, `notify_order_rejected`) — deferred until
@@ -539,7 +562,9 @@ resolved scope question above.
 
 - Write the RLS policies `nav-config.ts` implies, so access control
   doesn't rest solely on the app layer.
-- Migrate the last remaining Streamlit module: Raise Job Order.
+- Continue Raise Job Order: Phase 2 (Garment cart) is the natural next
+  step, then Phase 3 (the real batch submit — this is the last route
+  in the app still doing zero database writes).
 - Port `send_departmental_alert` + the `notify_*` functions into
   `backend/app/email.py` so Authorization Center's approve/reject
   notifications (currently omitted, see "What's NOT done yet") can be
