@@ -18,6 +18,10 @@ export type Role = string;
 export const ADMIN_ROLES: Role[] = ["admin", "manager", "supervisor", "md", "fm"];
 export const WAREHOUSE_ROLES: Role[] = ["warehouse"];
 export const FINANCE_ROLES: Role[] = ["finance"];
+// Narrow, single-purpose role: only gates Production Layout Builder
+// (ADMIN_ROLES | SCHEDULER_ROLES there). Doesn't touch Authorization
+// Center / Archive's existing ADMIN_ROLES-only gates.
+export const SCHEDULER_ROLES: Role[] = ["scheduler"];
 
 export interface NavItem {
   label: string;
@@ -35,17 +39,19 @@ export interface NavGroup {
 
 // Mirrors app.py's sidebar construction:
 //   ops_modules   = ["Command Center", "Shop Floor Control", "Production Board"]
-//   (+ "Production Layout Builder" inserted for admins)
+//   (+ "Production Layout Builder" inserted for ADMIN_ROLES|SCHEDULER_ROLES)
 //   admin_modules = ["Raise Job Order", "My Order Tracker"]
 //   (+ "Warehouse" for ADMIN_ROLES|WAREHOUSE_ROLES, "Dispatch" for
 //    ADMIN_ROLES|FINANCE_ROLES, + admin-only Authorization Center /
-//    Approved Orders Archive / Audit Log)
+//    Approved Orders Archive. Audit Log is open to any authenticated
+//    user, matching Production Board/Shop Floor Control's convention —
+//    it was admin-only originally, opened up deliberately later.)
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Plant Operations",
     items: [
       { label: "Command Center", href: "/command-center", icon: LayoutDashboard },
-      { label: "Production Layout Builder", href: "/production-layout", icon: LayoutTemplate, roles: ADMIN_ROLES },
+      { label: "Production Layout Builder", href: "/production-layout", icon: LayoutTemplate, roles: [...ADMIN_ROLES, ...SCHEDULER_ROLES] },
       { label: "Production Board", href: "/production-board", icon: Factory },
       { label: "Shop Floor Control", href: "/shop-floor", icon: Wrench },
     ],
@@ -59,7 +65,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },
       { label: "Approved Orders Archive", href: "/archive", icon: Archive, roles: ADMIN_ROLES },
-      { label: "Audit Log", href: "/audit-log", icon: History, roles: ADMIN_ROLES },
+      { label: "Audit Log", href: "/audit-log", icon: History },
     ],
   },
 ];

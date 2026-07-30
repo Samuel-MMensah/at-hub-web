@@ -3,7 +3,7 @@ import { TopBar } from "@/components/shell/topbar";
 import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
-import { ADMIN_ROLES, hasRole } from "@/lib/nav-config";
+import { ADMIN_ROLES, SCHEDULER_ROLES, hasRole } from "@/lib/nav-config";
 import { ProductionLayoutClient, type ApprovedOrderRow } from "./production-layout-client";
 
 // Mirrors get_db_job_orders("Approved") (app.py:925-936): a plain .eq()
@@ -19,10 +19,12 @@ async function getApprovedOrders() {
 }
 
 export default async function ProductionLayoutPage() {
-  // Matches app.py:5340's "and is_admin" gate exactly (same ADMIN_ROLES
-  // set as Authorization Center / Archive / Audit Log).
+  // ADMIN_ROLES | SCHEDULER_ROLES — was ADMIN_ROLES-only (matching
+  // app.py:5340's "and is_admin" gate, same set as Authorization
+  // Center / Archive), widened deliberately for the new narrow
+  // "scheduler" role. Authorization Center / Archive stay untouched.
   const user = await requireUser();
-  const allowed = hasRole(user.role, ADMIN_ROLES);
+  const allowed = hasRole(user.role, [...ADMIN_ROLES, ...SCHEDULER_ROLES]);
 
   const orders = allowed ? await getApprovedOrders() : [];
 

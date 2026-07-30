@@ -1,9 +1,7 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
-import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
-import { ADMIN_ROLES, hasRole } from "@/lib/nav-config";
 import { AuditLogClient, type AuditOrderRow } from "./audit-log-client";
 
 // "Every order that isn't still a draft" — covers more statuses than
@@ -34,12 +32,12 @@ async function getAuditOrders() {
 }
 
 export default async function AuditLogPage() {
-  // Matches rbac.py's is_admin() convention: ADMIN_ROLES only, not
-  // unioned with any other role set (unlike Warehouse/Dispatch).
+  // No role gate — any authenticated user, matching Production
+  // Board/Shop Floor Control's convention. Was ADMIN_ROLES-only
+  // originally; opened up deliberately later (see nav-config.ts).
   const user = await requireUser();
-  const allowed = hasRole(user.role, ADMIN_ROLES);
 
-  const orders = allowed ? await getAuditOrders() : [];
+  const orders = await getAuditOrders();
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -49,16 +47,12 @@ export default async function AuditLogPage() {
       />
 
       <div className="mb-1 text-lg font-bold text-at-navy-soft">Audit Log</div>
-      {allowed && (
-        <div className="mb-4 text-sm text-at-slate">
-          Who raised, approved, and moved each order — current recorded state, not a
-          field-by-field edit history.
-        </div>
-      )}
+      <div className="mb-4 text-sm text-at-slate">
+        Who raised, approved, and moved each order — current recorded state, not a
+        field-by-field edit history.
+      </div>
 
-      {!allowed ? (
-        <RestrictedAccess icon="🔒" message="The Audit Log is reserved for administrators." />
-      ) : orders.length === 0 ? (
+      {orders.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
           No orders recorded yet.
         </div>
