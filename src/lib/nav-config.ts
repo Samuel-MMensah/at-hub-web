@@ -22,6 +22,13 @@ export const FINANCE_ROLES: Role[] = ["finance"];
 // (ADMIN_ROLES | SCHEDULER_ROLES there). Doesn't touch Authorization
 // Center / Archive's existing ADMIN_ROLES-only gates.
 export const SCHEDULER_ROLES: Role[] = ["scheduler"];
+// Only gates Raise Job Order / My Order Tracker (ADMIN_ROLES |
+// RAISE_ORDER_ROLES there). "front desk" matches rbac.py's actual
+// stored role string; "operations" was added after the initial pass
+// missed that Victor Matibag's real Operations account needs the same
+// access. Case-insensitive via hasRole()'s existing lowercase
+// comparison, same as every other *_ROLES constant here.
+export const RAISE_ORDER_ROLES: Role[] = ["front desk", "operations"];
 
 export interface NavItem {
   label: string;
@@ -40,7 +47,9 @@ export interface NavGroup {
 // Mirrors app.py's sidebar construction:
 //   ops_modules   = ["Command Center", "Shop Floor Control", "Production Board"]
 //   (+ "Production Layout Builder" inserted for ADMIN_ROLES|SCHEDULER_ROLES)
-//   admin_modules = ["Raise Job Order", "My Order Tracker"]
+//   admin_modules = ["Raise Job Order", "My Order Tracker"] — both
+//   gated to ADMIN_ROLES|RAISE_ORDER_ROLES (was unrestricted
+//   originally; narrowed deliberately later, see each page.tsx)
 //   (+ "Warehouse" for ADMIN_ROLES|WAREHOUSE_ROLES, "Dispatch" for
 //    ADMIN_ROLES|FINANCE_ROLES, + admin-only Authorization Center /
 //    Approved Orders Archive. Audit Log is open to any authenticated
@@ -59,8 +68,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Administrative Portal",
     items: [
-      { label: "Raise Job Order", href: "/raise-order", icon: FilePlus2 },
-      { label: "My Order Tracker", href: "/my-orders", icon: ClipboardList },
+      { label: "Raise Job Order", href: "/raise-order", icon: FilePlus2, roles: [...ADMIN_ROLES, ...RAISE_ORDER_ROLES] },
+      { label: "My Order Tracker", href: "/my-orders", icon: ClipboardList, roles: [...ADMIN_ROLES, ...RAISE_ORDER_ROLES] },
       { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, ...WAREHOUSE_ROLES] },
       { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },

@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
+import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
+import { ADMIN_ROLES, RAISE_ORDER_ROLES, hasRole } from "@/lib/nav-config";
 import { OrderTrackerClient, type JobOrderRow, type JobRow } from "./order-tracker-client";
 
 const PRODUCTION_STATUSES = ["In Production", "At Warehouse"];
@@ -39,8 +41,12 @@ async function getMyOrders(email: string) {
 }
 
 export default async function MyOrdersPage() {
+  // ADMIN_ROLES | RAISE_ORDER_ROLES — was unrestricted (any authenticated
+  // user); narrowed deliberately later. See nav-config.ts.
   const user = await requireUser();
-  const { orders, jobs } = await getMyOrders(user.email);
+  const allowed = hasRole(user.role, [...ADMIN_ROLES, ...RAISE_ORDER_ROLES]);
+
+  const { orders, jobs } = allowed ? await getMyOrders(user.email) : { orders: [], jobs: [] };
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -51,7 +57,9 @@ export default async function MyOrdersPage() {
 
       <div className="mb-2 text-lg font-bold text-at-navy-soft">My Order Tracker</div>
 
-      {orders.length === 0 ? (
+      {!allowed ? (
+        <RestrictedAccess message="My Order Tracker is reserved for Front Desk staff, Operations, and administrators." />
+      ) : orders.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
           No job orders found under your account. Use &quot;Raise Job Order&quot; to
           submit your first contract.

@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
+import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
+import { ADMIN_ROLES, RAISE_ORDER_ROLES, hasRole } from "@/lib/nav-config";
 import { RaiseOrderClient, type ResubmitOrderData } from "./raise-order-client";
 
 // Hand-off from My Order Tracker's "Modify & Resubmit" link
@@ -31,30 +33,38 @@ export default async function RaiseOrderPage({
 }: {
   searchParams: Promise<{ resubmit?: string }>;
 }) {
-  // No role gate — matches app.py: any authenticated user (unlike
-  // Authorization Center / Archive / Production Layout Builder, which
-  // all check "and is_admin"). nav-config.ts's existing entry for this
-  // route already has no `roles` restriction either.
+  // ADMIN_ROLES | RAISE_ORDER_ROLES — was unrestricted (any authenticated
+  // user, matching app.py); narrowed deliberately later. See nav-config.ts.
   const user = await requireUser();
+  const allowed = hasRole(user.role, [...ADMIN_ROLES, ...RAISE_ORDER_ROLES]);
 
   const { resubmit } = await searchParams;
   const resubmitId = resubmit ? Number(resubmit) : null;
   const resubmitRequestedButInvalid = resubmitId !== null && Number.isNaN(resubmitId) === false;
   const resubmitOrder =
-    resubmitId !== null && !Number.isNaN(resubmitId) ? await getResubmitOrder(resubmitId, user.email) : null;
+    allowed && resubmitId !== null && !Number.isNaN(resubmitId)
+      ? await getResubmitOrder(resubmitId, user.email)
+      : null;
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
-      {resubmitRequestedButInvalid && !resubmitOrder && (
-        <div className="mb-4 rounded-at border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
-          That order can&apos;t be resubmitted — it may not be rejected, may not belong to your
-          account, or may no longer exist. Showing the normal Raise Job Order form instead.
-        </div>
-      )}
+      {!allowed ? (
+        <RestrictedAccess message="Raise Job Order is reserved for Front Desk staff, Operations, and administrators." />
+      ) : (
+        <>
+          {resubmitRequestedButInvalid && !resubmitOrder && (
+            <div className="mb-4 rounded-at border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+              That order can&apos;t be resubmitted — it may not be rejected, may not belong to
+              your account, or may no longer exist. Showing the normal Raise Job Order form
+              instead.
+            </div>
+          )}
 
-      <RaiseOrderClient userEmail={user.email} resubmitOrder={resubmitOrder} />
+          <RaiseOrderClient userEmail={user.email} resubmitOrder={resubmitOrder} />
+        </>
+      )}
     </AppShell>
   );
 }
