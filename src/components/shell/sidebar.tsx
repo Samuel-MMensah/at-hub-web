@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, canSeeItem, type Role } from "@/lib/nav-config";
@@ -12,7 +13,6 @@ interface SidebarProps {
   userRole: string;
   role: Role | null;
   pendingApprovalsCount?: number;
-  onSearch?: (query: string) => void;
 }
 
 export function Sidebar({
@@ -20,9 +20,16 @@ export function Sidebar({
   userRole,
   role,
   pendingApprovalsCount = 0,
-  onSearch,
 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [searchValue, setSearchValue] = useState("");
+
+  function submitSearch() {
+    const q = searchValue.trim();
+    if (!q) return;
+    router.push(`/search?q=${encodeURIComponent(q)}`);
+  }
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-at-border bg-at-white">
@@ -82,8 +89,10 @@ export function Sidebar({
           );
         })}
 
-        {/* Global search — same purpose as the sidebar text_input in app.py,
-            now a proper input with an icon instead of a bare text field. */}
+        {/* Global search — same purpose as the sidebar text_input in
+            app.py, wired to the real /search route. Fires on Enter, not
+            per keystroke — a search per character would mean a page
+            navigation per character. */}
         <div className="mb-6">
           <div className="mb-2 px-2 text-[0.7rem] font-bold uppercase tracking-wider text-at-slate">
             Global Search
@@ -93,7 +102,11 @@ export function Sidebar({
             <input
               type="text"
               placeholder="Order No · Customer…"
-              onChange={(e) => onSearch?.(e.target.value)}
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitSearch();
+              }}
               className="w-full bg-transparent text-sm outline-none placeholder:text-at-slate-light"
             />
           </div>
