@@ -177,3 +177,132 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
 
   return { submitted: data ?? [], warnings: warnings.length > 0 ? warnings : undefined };
 }
+
+// Matches f"RPPG-{datetime.now().strftime('%Y%m%d-%H%M%S')}" (Press) /
+// the "RGPG-" equivalent (Garment) EXACTLY — deliberately NOT the same
+// shape as generateParentGroupId's PG-/GPG- batch ids (no trailing
+// random suffix). Computed server-side, same reasoning as
+// combineDateWithNowAsUtc in this same file.
+function generateResubmitPgid(prefix: "RPPG" | "RGPG"): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${prefix}-${datePart}-${timePart}`;
+}
+
+// Mirrors both resubmit_press_form's and resubmit_garment_form's submit
+// handlers (app.py) exactly — structurally identical once the item is
+// already job_orders-row-shaped, so one action serves both.
+//
+// CRITICAL, and easy to get backwards: this INSERTS A NEW ROW. The
+// original rejected row is never updated, never touched — it stays in
+// the database exactly as it was, permanently, as its own record. This
+// new row is a completely separate order that happens to reuse the
+// original's parent_group_id (if it had one).
+//
+// job_order_no is never set here — same live-confirmed Postgres DEFAULT
+// as submitBatch relies on.
+export async function resubmitOrder(formData: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const clientName = String(formData.get("clientName") ?? "").trim();
+  const clientPhone = String(formData.get("clientPhone") ?? "").trim();
+  const itemJson = String(formData.get("item") ?? "{}");
+  const sampleAttached = String(formData.get("sampleAttached") ?? "No");
+  const sampleWith = String(formData.get("sampleWith") ?? "").trim();
+  const is30Day = formData.get("is30Day") === "true";
+  const termsNotes = String(formData.get("termsNotes") ?? "").trim();
+  const originalParentGroupId = String(formData.get("originalParentGroupId") ?? "");
+
+  if (!clientName || !clientPhone) {
+    return { error: "Client name and telephone must be set before submitting." };
+  }
+  if (sampleAttached === "Yes" && !sampleWith) {
+    return { error: "Sample is marked attached — enter who has it before submitting." };
+  }
+
+  let item: Record<string, unknown>;
+  try {
+    item = JSON.parse(itemJson);
+  } catch {
+    return { error: "Malformed order payload." };
+  }
+
+  const supabase = await createClient();
+
+  // Matches _rp_upload_pgid = _rp_orig_pgid or f"RPPG-{...}" exactly:
+  // this fresh timestamp-based id is used ONLY for the storage upload
+  // path when there's no original batch to reuse — see below, it is
+  // NEVER written to the parent_group_id column in that case.
+  const pgidPrefix = item.department === "GARMENT" ? "RGPG" : "RPPG";
+  const uploadPgid = originalParentGroupId || generateResubmitPgid(pgidPrefix);
+
+  const lpoFileEntry = formData.get("lpoFile");
+  const sampleFileEntry = formData.get("sampleFile");
+  const warnings: string[] = [];
+
+  const lpoResult = await uploadBatchFile(
+    supabase,
+    lpoFileEntry instanceof File ? lpoFileEntry : null,
+    uploadPgid,
+    "LPO"
+  );
+  if (lpoResult.warning) warnings.push(lpoResult.warning);
+
+  const sampleResult = await uploadBatchFile(
+    supabase,
+    sampleFileEntry instanceof File ? sampleFileEntry : null,
+    uploadPgid,
+    "Sample photo"
+  );
+  if (sampleResult.warning) warnings.push(sampleResult.warning);
+
+  const termsParts: string[] = [];
+  if (is30Day) termsParts.push("30-Day Credit Terms");
+  if (termsNotes) termsParts.push(termsNotes);
+  const paymentTerms = termsParts.length > 0 ? termsParts.join(" | ") : null;
+
+  // Same strip as submitBatch — harmless no-op for a Press item, which
+  // never has this key.
+  const { material_description_rows: _omit, ...dbFields } = item;
+  void _omit;
+
+  const row: Record<string, unknown> = {
+    ...dbFields,
+    customer_name: clientName,
+    telephone_number: clientPhone,
+    status: "Pending Approval",
+    created_by: user.email,
+    order_date: todayLocalDateStr(),
+    sample_attached: sampleAttached,
+    sample_with: sampleAttached === "Yes" ? sampleWith : null,
+    lpo_file_url: lpoResult.url,
+    sample_file_url: sampleResult.url,
+    payment_terms: paymentTerms,
+    // No sales_rep here — the source's own resubmit payloads
+    // (rp_payload/rg_payload) never include this key at all, unlike
+    // the New-cart batch submit. Not carried over from the original
+    // order either. Ported as-is, not "fixed."
+  };
+
+  // Matches `if _rp_orig_pgid: rp_payload["parent_group_id"] = _rp_orig_pgid`
+  // exactly — the column is only ever set when reusing an ORIGINAL
+  // group id. A resubmit with no original batch gets NO parent_group_id
+  // at all (not the fresh RPPG-/RGPG- upload-path id above).
+  if (originalParentGroupId) {
+    row.parent_group_id = originalParentGroupId;
+  }
+
+  const { data, error } = await supabase.from("job_orders").insert([row]).select();
+
+  if (error) {
+    return { error: error.message, warnings: warnings.length > 0 ? warnings : undefined };
+  }
+
+  revalidatePath("/raise-order");
+  revalidatePath("/my-orders");
+  revalidatePath("/authorization");
+
+  return { submitted: data ?? [], warnings: warnings.length > 0 ? warnings : undefined };
+}

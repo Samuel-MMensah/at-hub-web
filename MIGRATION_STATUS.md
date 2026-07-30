@@ -188,9 +188,9 @@ hosting/keys setup.
     `contract_value` split evenly across all 3 stages, single
     `tracking_id` shared across the whole job. Test order and its
     `jobs` rows deleted and confirmed gone afterward.
-- `/raise-order` (Raise Job Order) — **Phases 1-3, real, including a
-  real write.** No role gate (matches app.py: any authenticated user,
-  same as Production Board/Shop Floor Control — unlike Authorization
+- `/raise-order` (Raise Job Order) — **all five phases, real, complete.**
+  No role gate (matches app.py: any authenticated user, same as
+  Production Board/Shop Floor Control — unlike Authorization
   Center/Archive/Production Layout Builder's `is_admin` gate).
   - **Phase 1 — New Press cart, built**: item form (every field from
     `add_cart_item_form`, app.py:3531-3624), add/edit-in-place/remove
@@ -287,6 +287,56 @@ hosting/keys setup.
       (shared `parent_group_id`, distinct `job_order_no` per item) were
       already thoroughly verified separately in the 3-item batch test
       above. Accepted as sufficient rather than re-run.
+  - **Phases 4-5 — Resubmit Press and Resubmit Garment, built**:
+    single-order forms (no cart), pre-filled from the original rejected
+    order, one shared `resubmitOrder()` Server Action (`actions.ts`)
+    serving both departments since a resubmit item is already
+    job_orders-row-shaped, mirroring `resubmit_press_form`/
+    `resubmit_garment_form` (app.py:2829-3421) — read fresh rather than
+    assumed symmetric with either each other or the Phase 1-3 New-cart
+    forms, and several real differences were found and preserved rather
+    than unified: neither resubmit form collects a Sales Rep at all
+    (unlike the New-cart batch submit, and not carried over from the
+    original order either); the payment-terms-notes field is
+    pre-filled by parsing the original's `payment_terms` string (split
+    on the first "|", or the whole string if it wasn't just a bare
+    "30-Day Credit Terms" flag); each department's own Delivery Mode
+    label ("Client Pickup" for Press, "Customer Pick-up" for Garment)
+    is consistent between its own New-cart and Resubmit forms — it's
+    Press-vs-Garment that differs, not New-cart-vs-Resubmit within one
+    department (an earlier session's comment claimed the opposite
+    before the resubmit forms had actually been read; corrected here).
+    - **CRITICAL, verified live, not just asserted**: this creates a
+      NEW `job_orders` row via INSERT — the original rejected row is
+      never updated, stays exactly as-is permanently. Also verified:
+      the fresh `RPPG-`/`RGPG-{timestamp}` id (no random suffix, unlike
+      the New-cart batch's `PG-`/`GPG-{timestamp}-{random}` — a
+      genuinely different format, not assumed to match) is used ONLY
+      for the file-upload storage path when the original order had no
+      `parent_group_id` — it is `never` written to the
+      `parent_group_id` column in that case, matching
+      `if _rp_orig_pgid: rp_payload["parent_group_id"] = _rp_orig_pgid`
+      exactly. When the original DID have a `parent_group_id`, the new
+      row reuses it verbatim.
+    - **Hand-off from My Order Tracker wired up**: rejected `OrderCard`s
+      now have a real "🔄 Modify & Resubmit" link to
+      `/raise-order?resubmit={id}` (`order-tracker-client.tsx`) — the
+      gap Phase 1 deliberately left open for exactly this. `page.tsx`
+      fetches that one order fresh server-side (`select("*")`,
+      re-verifying it's actually `Rejected` and actually
+      `created_by === user.email` — never trusting the id alone) rather
+      than accepting anything from the client.
+    - **End-to-end verified live**: a synthetic Pending Approval order
+      was rejected via Authorization Center's own already-proven reject
+      action, then resubmitted via this new form with a live edit.
+      Confirmed after: the original row's `status` stayed `Rejected`
+      with its `rejection_note` intact and every other field
+      byte-for-byte unchanged; a new row existed with a real
+      DB-generated `job_order_no`, `status = 'Pending Approval'`, the
+      SAME `parent_group_id` as the original, `sales_rep` correctly
+      null, and the live-edited field (`type_of_print`) correctly
+      reflecting the correction. Both rows deleted and confirmed gone
+      afterward.
 
 ## Routes still in Streamlit
 
@@ -384,10 +434,10 @@ Ports `app.py`'s "My Order Tracker" route (`get_all_db_job_orders_by_user()`
   infrastructure"). No longer disabled/"coming soon" — `POST
   /pdf/manifest` is live. See "Backend service — PDF manifest
   generation" below.
-- Modify & Resubmit — **omitted entirely this pass**. The original
-  hands off to Raise Job Order's resubmit mode, which isn't built yet
-  (Raise Job Order's own Phase 4 — see "Routes migrated"); this is a
-  noted follow-up, not a silently dropped feature.
+- Modify & Resubmit — **real**, a "🔄 Modify & Resubmit" link on every
+  Rejected order's card to `/raise-order?resubmit={id}` — see Raise Job
+  Order's own Phases 4-5 entry under "Routes migrated" for how the
+  hand-off and the resubmit forms work.
 
 Exact logic lives in `src/app/my-orders/page.tsx` and
 `src/app/my-orders/order-tracker-client.tsx` — these files are the
@@ -478,11 +528,10 @@ doc.
 - Email sending is still a stub in `backend/app/main.py`
   (`NotImplementedError`) — PDF generation is done (see "Backend
   service — PDF manifest generation"), email is not.
-- Modify & Resubmit (My Order Tracker → Raise Job Order handoff) is
-  Raise Job Order's own Phase 4 — see "Routes migrated".
-- Raise Job Order Phases 4-5 (Modify & Resubmit, quick-fill from past
-  customer) — see "Routes migrated" for the full phase breakdown.
-  Phases 1-3 (both carts, real batch submit) are done.
+- Raise Job Order's quick-fill from past customer
+  (`get_recent_customers()`) — the one remaining piece of that route,
+  deliberately deferred (see "Routes migrated"); every write-path phase
+  (1-5, including Modify & Resubmit) is done.
 - Authorization Center's four approve/reject notifications
   (`notify_order_approved`, `notify_needs_scheduling`,
   `send_departmental_alert`, `notify_order_rejected`) — deferred until

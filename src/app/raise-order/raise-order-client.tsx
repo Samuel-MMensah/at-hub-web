@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
-import { submitBatch } from "./actions";
+import { submitBatch, resubmitOrder as resubmitOrderAction } from "./actions";
 
 const CURRENCY = "GH₵";
 
@@ -208,15 +208,96 @@ function AttachmentsAndTermsSection({
   );
 }
 
+// Full original job_orders row for the order being resubmitted — every
+// _rd()/_rdf()/_rdi()/_rdd()/_rdl() call in both resubmit forms
+// (app.py) reads straight off resubmit_data, which is the ENTIRE
+// rejected row, not a purpose-built subset. Fetched fresh server-side
+// by page.tsx (select("*") for exactly one id, re-verified Rejected +
+// owned by the requesting user) rather than trusted from the client.
+export interface ResubmitOrderData {
+  id: number;
+  job_order_no: string | null;
+  customer_name: string | null;
+  telephone_number: string | null;
+  job_description: string | null;
+  total_amount: number | null;
+  deposit_amount: number | null;
+  receipt_no: string | null;
+  balance_due_date: string | null;
+  date_of_collection: string | null;
+  sample_attached: string | null;
+  sample_with: string | null;
+  payment_terms: string | null;
+  qty_to_print: number | null;
+  type_of_print: string | null;
+  print_type: string | null;
+  material_source: string | null;
+  delivery_mode: string | null;
+  print_size: string | null;
+  finished_print_size: string | null;
+  yardage: string | null;
+  paper_type: string | null;
+  gsm: string | null;
+  paper_size: string | null;
+  paper_colour: string | null;
+  impressions_colour: string | null;
+  binding_type: string | null;
+  laminating_type: string | null;
+  material_description: string | null;
+  additional_comments: string | null;
+  packaging_mode: string | null;
+  qty_to_pack: number | null;
+  packaging_specs: string | null;
+  delivery_location: string | null;
+  delivery_contact: string | null;
+  process_info: string | null;
+  parent_group_id: string | null;
+  department: string | null;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Top-level: Department toggle (app.py:3454-3467) — a single selectbox,
 // not a route/tab split. selected_department gates which cart renders,
 // exactly matching the source's `if selected_department == "PRESS": ...
-// else: [GARMENT]` structure. Resubmit-mode's index-prefill
-// (`resubmit_active_dept`) is resubmit-only plumbing, out of scope here.
+// else: [GARMENT]` structure. When resubmitOrder is present (from My
+// Order Tracker's "Modify & Resubmit" link), this mirrors the source's
+// OUTER `if resubmit_data: ... else: [NORMAL MODE]` branch instead —
+// resubmit mode bypasses the Department toggle and both carts entirely,
+// routing on the rejected order's OWN `department` field
+// (`resubmit_data.get("department", "PRESS")` in the source).
 // ═══════════════════════════════════════════════════════════════════
-export function RaiseOrderClient({ userEmail }: { userEmail: string }) {
+export function RaiseOrderClient({
+  userEmail,
+  resubmitOrder,
+}: {
+  userEmail: string;
+  resubmitOrder: ResubmitOrderData | null;
+}) {
   const [department, setDepartment] = useState<"PRESS" | "GARMENT">("PRESS");
+
+  if (resubmitOrder) {
+    const dept = resubmitOrder.department === "GARMENT" ? "GARMENT" : "PRESS";
+    return (
+      <div>
+        <div className="mb-4 rounded-at-lg border border-red-300 bg-gradient-to-br from-red-50 to-rose-100 p-5">
+          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-red-800">
+            Resubmission Mode Active
+          </div>
+          <div className="text-sm text-red-900">
+            You are correcting and resubmitting{" "}
+            <strong>{resubmitOrder.job_order_no ?? "this order"}</strong> for{" "}
+            <strong>{resubmitOrder.customer_name ?? ""}</strong>. All fields are pre-loaded. Make
+            your corrections then click RESUBMIT.
+          </div>
+        </div>
+        {dept === "GARMENT" ? (
+          <GarmentResubmitForm order={resubmitOrder} userEmail={userEmail} />
+        ) : (
+          <PressResubmitForm order={resubmitOrder} userEmail={userEmail} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -249,10 +330,12 @@ export function RaiseOrderClient({ userEmail }: { userEmail: string }) {
 
 const PRINT_CATEGORY_OPTIONS = ["", "OFFSET", "DIGITAL PRESS", "PACKAGING"];
 const MATERIAL_SOURCE_OPTIONS = ["", "Customer Material", "Company Material"];
-// Distinct from the resubmit form's "Customer Pick-up" label (app.py:2944)
-// — the Press cart form (app.py:3561) uses "Client Pickup". Two different
-// labels for the same concept in the source itself; this route ports
-// the cart form's own labels, not resubmit's (resubmit is out of scope).
+// "Client Pickup" — consistently PRESS's own label across BOTH forms
+// that collect it (app.py:3561 New-cart, app.py:3243 Resubmit); it's
+// GARMENT that differs (see GARMENT_DELIVERY_MODE_OPTIONS's own note),
+// not New-cart vs. Resubmit within one department. An earlier version
+// of this comment claimed the opposite before the resubmit forms had
+// actually been read — corrected once they were.
 const DELIVERY_MODE_OPTIONS = ["Company Delivery", "Client Pickup"];
 const BINDING_OPTIONS = ["Perfect Binding", "Spiral Binding", "Saddle Stitching", "Comb Binding"];
 const LAMINATING_OPTIONS = ["Gloss Laminating", "Matt Laminating", "Soft Touch", "UV-Varnish"];
@@ -920,10 +1003,11 @@ const GARMENT_PRINT_TYPE_OPTIONS = ["", "DTF", "Flexi Screen Print", "UV-DTF", "
 // two forms in the source itself (app.py:3556 vs app.py:3920), kept
 // exactly as-is rather than unified.
 const GARMENT_MATERIAL_SOURCE_OPTIONS = ["", "Company Material", "Customer Material"];
-// Distinct from the Press cart form's "Client Pickup" label (app.py:3561)
-// — the Garment cart form (app.py:3932) uses "Customer Pick-up" instead
-// (which happens to match the resubmit form's garment label,
-// app.py:2944 — but this route doesn't build resubmit, that's coincidence).
+// "Customer Pick-up" — consistently GARMENT's own label across BOTH
+// forms that collect it (app.py:3932 New-cart, app.py:2944 Resubmit),
+// distinct from PRESS's "Client Pickup" (see DELIVERY_MODE_OPTIONS's
+// own note) — a genuine cross-department difference, not a New-cart
+// vs. Resubmit one.
 const GARMENT_DELIVERY_MODE_OPTIONS = ["Company Delivery", "Customer Pick-up"];
 // Print Size is a FIXED DROPDOWN in the Garment form (app.py:3940),
 // unlike Press's free-text "Print Size" input — a real, deliberate
@@ -1663,6 +1747,989 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RESUBMIT (Phases 4-5) — app.py:2829-3421. Single-order forms, no
+// cart: one INSERT per submit, not a batch. CRITICAL: this creates a
+// NEW row — the original rejected row is never updated or touched.
+// ═══════════════════════════════════════════════════════════════════
+
+// Reads a field off the original rejected order, coalescing null/
+// undefined to a fallback — the practical on-screen effect of the
+// source's _rd()/_rdf()/_rdi() helpers (Streamlit's text_input/
+// number_input both treat value=None the same as "use the default"),
+// even though Python's dict.get(key, default) technically only falls
+// back when the KEY itself is absent, which never happens here since
+// resubmit_data is always a full DB row.
+function rd(order: ResubmitOrderData, key: keyof ResubmitOrderData): string {
+  const v = order[key];
+  return v === null || v === undefined ? "" : String(v);
+}
+function rdNum(order: ResubmitOrderData, key: keyof ResubmitOrderData): number {
+  const v = order[key];
+  return v === null || v === undefined || v === ("" as unknown) ? 0 : Number(v);
+}
+function rdOption(order: ResubmitOrderData, key: keyof ResubmitOrderData, options: string[]): string {
+  const v = rd(order, key);
+  return options.includes(v) ? v : "";
+}
+function rdDate(order: ResubmitOrderData, key: keyof ResubmitOrderData, fallback: string): string {
+  const v = order[key];
+  if (typeof v === "string" && v.length >= 10) {
+    const datePart = v.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  }
+  return fallback;
+}
+function rdList(order: ResubmitOrderData, key: keyof ResubmitOrderData, options: string[]): Set<string> {
+  const v = rd(order, key);
+  if (!v || v === "None") return new Set();
+  return new Set(v.split(",").map((s) => s.trim()).filter((s) => options.includes(s)));
+}
+
+// Ports the payment-terms-notes pre-fill parsing exactly
+// (app.py:2914-2920 / app.py:3218-3224): if the original's payment_terms
+// contains "|", everything after the FIRST "|" is the notes portion
+// (strips a leading "30-Day Credit Terms" segment); otherwise, if it
+// doesn't literally contain "30-Day Credit Terms", the whole string was
+// just notes, so use it as-is; otherwise there were no real notes.
+function parseExistingTermsNotes(paymentTerms: string): string {
+  const sepIdx = paymentTerms.indexOf("|");
+  if (sepIdx !== -1) {
+    return paymentTerms.slice(sepIdx + 1).trim();
+  }
+  return paymentTerms.includes("30-Day Credit Terms") ? "" : paymentTerms;
+}
+
+// Shared by both resubmit forms — identical fields in the source for
+// Press and Garment resubmit alike. Distinct from Phase 3's
+// AttachmentsAndTermsSection: neither resubmit form collects a Sales
+// Rep at all (rp_payload/rg_payload never include that key — not
+// carried over from the original order either, ported as-is, not
+// "fixed").
+interface ResubmitAttachmentsState {
+  lpoFile: File | null;
+  sampleFile: File | null;
+  sampleAttached: "No" | "Yes";
+  sampleWith: string;
+  is30Day: boolean;
+  termsNotes: string;
+}
+
+function ResubmitAttachmentsSection({
+  state,
+  setState,
+  hasBalance,
+}: {
+  state: ResubmitAttachmentsState;
+  setState: React.Dispatch<React.SetStateAction<ResubmitAttachmentsState>>;
+  hasBalance: boolean;
+}) {
+  return (
+    <>
+      <SectionHeader>Attachments &amp; Terms</SectionHeader>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="Upload LPO (optional) — goes to MD/FM">
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setState((s) => ({ ...s, lpoFile: e.target.files?.[0] ?? null }))}
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+        <FormField label="Upload Sample Photo (optional) — goes to the department">
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setState((s) => ({ ...s, sampleFile: e.target.files?.[0] ?? null }))}
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="Sample Attached?">
+          <select
+            value={state.sampleAttached}
+            onChange={(e) => setState((s) => ({ ...s, sampleAttached: e.target.value as "No" | "Yes" }))}
+            className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          >
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </select>
+        </FormField>
+        <FormField label="Sample With (required if Yes)">
+          <input
+            type="text"
+            value={state.sampleWith}
+            onChange={(e) => setState((s) => ({ ...s, sampleWith: e.target.value }))}
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+      </div>
+      <div className="mt-3">
+        <label className="flex items-center gap-2 text-sm text-at-slate">
+          <input
+            type="checkbox"
+            checked={state.is30Day}
+            onChange={(e) => setState((s) => ({ ...s, is30Day: e.target.checked }))}
+          />
+          30-Day Credit Terms job
+        </label>
+      </div>
+      {hasBalance && (
+        <div className="mt-3">
+          <FormField label="Payment Terms Notes — not fully paid; explain the arrangement for MD/FM">
+            <textarea
+              value={state.termsNotes}
+              onChange={(e) => setState((s) => ({ ...s, termsNotes: e.target.value }))}
+              rows={2}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ResubmitConfirmation({ ticket }: { ticket: Record<string, unknown> }) {
+  return (
+    <div className="mt-6 rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 p-5">
+      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-green-800">
+        Order Resubmitted
+      </div>
+      <div className="text-lg font-extrabold text-at-navy">
+        Ref: {String(ticket.job_order_no ?? "PENDING")} — routed to management authorization queue
+      </div>
+      <div className="mt-3">
+        <PdfPreviewButton orderId={Number(ticket.id)} label="📄 Export PDF Manifest" />
+      </div>
+    </div>
+  );
+}
+
+function PressResubmitForm({ order, userEmail }: { order: ResubmitOrderData; userEmail: string }) {
+  const [today] = useState(() => todayLocalDateStr());
+
+  const [clientName, setClientName] = useState(() => rd(order, "customer_name"));
+  const [clientPhone, setClientPhone] = useState(() => rd(order, "telephone_number"));
+  const [desc, setDesc] = useState(() => rd(order, "job_description"));
+  const [totalAmt, setTotalAmt] = useState(() => rdNum(order, "total_amount"));
+  const [depositAmt, setDepositAmt] = useState(() => rdNum(order, "deposit_amount"));
+  const [balanceDue, setBalanceDue] = useState(() => rdDate(order, "balance_due_date", today));
+  const [collectionDate, setCollectionDate] = useState(() => rdDate(order, "date_of_collection", today));
+  const [receiptNo, setReceiptNo] = useState(() => rd(order, "receipt_no"));
+  const [qty, setQty] = useState(() => rdNum(order, "qty_to_print"));
+  const [typePrint, setTypePrint] = useState(() => rdOption(order, "type_of_print", PRINT_CATEGORY_OPTIONS));
+  const [materialSource, setMaterialSource] = useState(() =>
+    rdOption(order, "material_source", MATERIAL_SOURCE_OPTIONS)
+  );
+  const [printSize, setPrintSize] = useState(() => rd(order, "print_size"));
+  const [finishedSize, setFinishedSize] = useState(() => rd(order, "finished_print_size"));
+  const [paperType, setPaperType] = useState(() => rd(order, "paper_type"));
+  const [gsm, setGsm] = useState(() => rd(order, "gsm"));
+  const [paperSize, setPaperSize] = useState(() => rd(order, "paper_size"));
+  const [paperColour, setPaperColour] = useState(() => rd(order, "paper_colour"));
+  const [impressionsColour, setImpressionsColour] = useState(() => rd(order, "impressions_colour"));
+  const [deliveryMode, setDeliveryMode] = useState(() => {
+    const v = rd(order, "delivery_mode");
+    return DELIVERY_MODE_OPTIONS.includes(v) ? v : DELIVERY_MODE_OPTIONS[0];
+  });
+  const [binding, setBinding] = useState<Set<string>>(() => rdList(order, "binding_type", BINDING_OPTIONS));
+  const [laminating, setLaminating] = useState<Set<string>>(() =>
+    rdList(order, "laminating_type", LAMINATING_OPTIONS)
+  );
+
+  const [attachments, setAttachments] = useState<ResubmitAttachmentsState>(() => ({
+    lpoFile: null,
+    sampleFile: null,
+    sampleAttached: rd(order, "sample_attached") === "Yes" ? "Yes" : "No",
+    sampleWith: rd(order, "sample_with"),
+    is30Day: rd(order, "payment_terms").includes("30-Day Credit Terms"),
+    termsNotes: parseExistingTermsNotes(rd(order, "payment_terms")),
+  }));
+
+  const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [isSubmitting, startSubmitTransition] = useTransition();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
+  const [confirmedOrder, setConfirmedOrder] = useState<Record<string, unknown> | null>(null);
+
+  function toggleBinding(opt: string) {
+    setBinding((prev) => {
+      const next = new Set(prev);
+      if (next.has(opt)) next.delete(opt);
+      else next.add(opt);
+      return next;
+    });
+  }
+  function toggleLaminating(opt: string) {
+    setLaminating((prev) => {
+      const next = new Set(prev);
+      if (next.has(opt)) next.delete(opt);
+      else next.add(opt);
+      return next;
+    });
+  }
+
+  const hasBalance = totalAmt !== depositAmt;
+
+  function handleResubmit() {
+    const missing: string[] = [];
+    if (!clientName.trim()) missing.push("Customer Name");
+    if (!clientPhone.trim()) missing.push("Telephone Number");
+    if (!desc.trim()) missing.push("Item Description");
+    if (totalAmt <= 0) missing.push("Total Item Amount");
+    if (qty <= 0) missing.push("Quantity");
+    if (!typePrint) missing.push("Print Category");
+    if (depositAmt > 0 && !receiptNo.trim()) {
+      missing.push("Receipt Number (required since a deposit was entered)");
+    }
+    if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
+      missing.push("Sample With (required since a sample is marked attached)");
+    }
+
+    setMissingFields(missing);
+    if (missing.length > 0) return;
+
+    setSubmitError(null);
+    setSubmitWarnings([]);
+
+    const item = {
+      department: "PRESS",
+      job_description: sanitizeString(desc),
+      total_amount: totalAmt,
+      deposit_amount: depositAmt,
+      receipt_no: depositAmt > 0 ? sanitizeString(receiptNo) : null,
+      balance_due_date: balanceDue,
+      date_of_collection: collectionDate,
+      qty_to_print: Math.trunc(qty),
+      type_of_print: typePrint,
+      material_source: materialSource,
+      print_size: sanitizeString(printSize),
+      finished_print_size: sanitizeString(finishedSize),
+      paper_type: sanitizeString(paperType),
+      gsm: sanitizeString(gsm),
+      paper_size: sanitizeString(paperSize),
+      paper_colour: sanitizeString(paperColour),
+      impressions_colour: impressionsColour,
+      delivery_mode: deliveryMode,
+      binding_type: binding.size > 0 ? Array.from(binding).join(", ") : "None",
+      laminating_type: laminating.size > 0 ? Array.from(laminating).join(", ") : "None",
+      print_type: null,
+      yardage: null,
+      packaging_mode: null,
+      process_info: null,
+      material_description: null,
+    };
+
+    const fd = new FormData();
+    fd.set("originalParentGroupId", order.parent_group_id ?? "");
+    fd.set("clientName", clientName);
+    fd.set("clientPhone", clientPhone);
+    fd.set("item", JSON.stringify(item));
+    fd.set("sampleAttached", attachments.sampleAttached);
+    fd.set("sampleWith", attachments.sampleWith);
+    fd.set("is30Day", String(attachments.is30Day));
+    fd.set("termsNotes", attachments.termsNotes);
+    if (attachments.lpoFile) fd.set("lpoFile", attachments.lpoFile);
+    if (attachments.sampleFile) fd.set("sampleFile", attachments.sampleFile);
+
+    startSubmitTransition(async () => {
+      const result = await resubmitOrderAction(fd);
+      if (result.error) {
+        setSubmitError(result.error);
+        if (result.warnings) setSubmitWarnings(result.warnings);
+        return;
+      }
+      setConfirmedOrder(result.submitted?.[0] ?? null);
+      if (result.warnings) setSubmitWarnings(result.warnings);
+    });
+  }
+
+  return (
+    <div>
+      <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
+        <SectionHeader>Client Identity &amp; Contract Outline</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Customer Name ★">
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Telephone Number ★">
+            <input
+              type="text"
+              value={clientPhone}
+              onChange={(e) => setClientPhone(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+        <div className="mt-3">
+          <FormField label="Item Description ★">
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              rows={2}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <SectionHeader>Financial Ledgers &amp; Scheduling</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <FormField label={`Total Item Amount (${CURRENCY}) ★`}>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={totalAmt}
+              onChange={(e) => setTotalAmt(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label={`Deposit Paid (${CURRENCY})`}>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={depositAmt}
+              onChange={(e) => setDepositAmt(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Balance Deadline ★">
+            <input
+              type="date"
+              value={balanceDue}
+              onChange={(e) => setBalanceDue(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Collection Date ★">
+            <input
+              type="date"
+              value={collectionDate}
+              onChange={(e) => setCollectionDate(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+        <div className="mt-3 max-w-sm">
+          <FormField label="Receipt Number (required if a deposit is entered)">
+            <input
+              type="text"
+              value={receiptNo}
+              onChange={(e) => setReceiptNo(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <ResubmitAttachmentsSection state={attachments} setState={setAttachments} hasBalance={hasBalance} />
+
+        <SectionHeader>Production Quantity &amp; Category</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FormField label="Quantity ★">
+            <input
+              type="number"
+              min={0}
+              step={500}
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Print Category ★">
+            <select
+              value={typePrint}
+              onChange={(e) => setTypePrint(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {PRINT_CATEGORY_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Material Source">
+            <select
+              value={materialSource}
+              onChange={(e) => setMaterialSource(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {MATERIAL_SOURCE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+        <div className="mt-3 max-w-xs">
+          <FormField label="Delivery Mode">
+            <select
+              value={deliveryMode}
+              onChange={(e) => setDeliveryMode(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {DELIVERY_MODE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+
+        <SectionHeader>Material &amp; Engineering Specifics</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <FormField label="Print Size">
+            <input
+              type="text"
+              value={printSize}
+              onChange={(e) => setPrintSize(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Finished Size">
+            <input
+              type="text"
+              value={finishedSize}
+              onChange={(e) => setFinishedSize(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Paper Material">
+            <input
+              type="text"
+              value={paperType}
+              onChange={(e) => setPaperType(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="GSM">
+            <input
+              type="text"
+              value={gsm}
+              onChange={(e) => setGsm(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FormField label="Paper Size">
+            <input
+              type="text"
+              value={paperSize}
+              onChange={(e) => setPaperSize(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Colour / Ink Specs">
+            <input
+              type="text"
+              value={paperColour}
+              onChange={(e) => setPaperColour(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Impressions">
+            <input
+              type="text"
+              value={impressionsColour}
+              onChange={(e) => setImpressionsColour(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <div className="mt-4">
+          <div className="mb-1.5 text-sm font-semibold text-at-navy">Binding Selection</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {BINDING_OPTIONS.map((o) => (
+              <label key={o} className="flex items-center gap-2 text-sm text-at-slate">
+                <input type="checkbox" checked={binding.has(o)} onChange={() => toggleBinding(o)} />
+                {o}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="mt-3">
+          <div className="mb-1.5 text-sm font-semibold text-at-navy">Laminating Selection</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {LAMINATING_OPTIONS.map((o) => (
+              <label key={o} className="flex items-center gap-2 text-sm text-at-slate">
+                <input type="checkbox" checked={laminating.has(o)} onChange={() => toggleLaminating(o)} />
+                {o}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-at border border-at-border bg-at-bg px-4 py-2.5 text-xs text-at-slate">
+          Handled By: {userEmail} | Date: {today}
+        </div>
+
+        {missingFields.length > 0 && (
+          <div className="mt-3 text-sm font-semibold text-red-600">
+            Transaction blocked. Missing required fields: {missingFields.join(", ")}
+          </div>
+        )}
+        {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
+        {submitWarnings.map((w, i) => (
+          <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+            {w}
+          </div>
+        ))}
+
+        <div className="mt-4">
+          <Button disabled={isSubmitting} onClick={handleResubmit}>
+            {isSubmitting ? "RESUBMITTING…" : "🔄 RESUBMIT FOR MANAGEMENT APPROVAL"}
+          </Button>
+        </div>
+      </div>
+
+      {confirmedOrder && <ResubmitConfirmation ticket={confirmedOrder} />}
+    </div>
+  );
+}
+
+function GarmentResubmitForm({ order, userEmail }: { order: ResubmitOrderData; userEmail: string }) {
+  const [today] = useState(() => todayLocalDateStr());
+
+  const [clientName, setClientName] = useState(() => rd(order, "customer_name"));
+  const [clientPhone, setClientPhone] = useState(() => rd(order, "telephone_number"));
+  const [desc, setDesc] = useState(() => rd(order, "job_description"));
+  const [totalAmt, setTotalAmt] = useState(() => rdNum(order, "total_amount"));
+  const [depositAmt, setDepositAmt] = useState(() => rdNum(order, "deposit_amount"));
+  const [balanceDue, setBalanceDue] = useState(() => rdDate(order, "balance_due_date", today));
+  const [collectionDate, setCollectionDate] = useState(() => rdDate(order, "date_of_collection", today));
+  const [receiptNo, setReceiptNo] = useState(() => rd(order, "receipt_no"));
+  const [qty, setQty] = useState(() => rdNum(order, "qty_to_print"));
+  const [materialSource, setMaterialSource] = useState(() =>
+    rdOption(order, "material_source", GARMENT_MATERIAL_SOURCE_OPTIONS)
+  );
+  const [printType, setPrintType] = useState(() => {
+    const v = rd(order, "print_type") || rd(order, "type_of_print");
+    return GARMENT_PRINT_TYPE_OPTIONS.includes(v) ? v : "";
+  });
+  const [deliveryMode, setDeliveryMode] = useState(() => {
+    const v = rd(order, "delivery_mode");
+    return GARMENT_DELIVERY_MODE_OPTIONS.includes(v) ? v : GARMENT_DELIVERY_MODE_OPTIONS[0];
+  });
+  const [printSize, setPrintSize] = useState(() => rdOption(order, "print_size", GARMENT_PRINT_SIZE_OPTIONS));
+  const [finishedSize, setFinishedSize] = useState(() => {
+    const v = rd(order, "finished_print_size") || rd(order, "yardage");
+    return GARMENT_FINISHED_SIZE_OPTIONS.includes(v) ? v : "";
+  });
+  const [materialDesc, setMaterialDesc] = useState(() => rd(order, "material_description"));
+  const [additionalComments, setAdditionalComments] = useState(() => rd(order, "additional_comments"));
+  const [packagingMode, setPackagingMode] = useState(() =>
+    rdOption(order, "packaging_mode", GARMENT_PACKAGING_MODE_OPTIONS)
+  );
+  const [qtyToPack, setQtyToPack] = useState(() => rdNum(order, "qty_to_pack"));
+  const [packagingSpecs, setPackagingSpecs] = useState(() => rd(order, "packaging_specs"));
+  const [deliveryLocation, setDeliveryLocation] = useState(() => rd(order, "delivery_location"));
+  const [deliveryContact, setDeliveryContact] = useState(() => rd(order, "delivery_contact"));
+  const [processInfo, setProcessInfo] = useState(() => rd(order, "process_info"));
+
+  const [attachments, setAttachments] = useState<ResubmitAttachmentsState>(() => ({
+    lpoFile: null,
+    sampleFile: null,
+    sampleAttached: rd(order, "sample_attached") === "Yes" ? "Yes" : "No",
+    sampleWith: rd(order, "sample_with"),
+    is30Day: rd(order, "payment_terms").includes("30-Day Credit Terms"),
+    termsNotes: parseExistingTermsNotes(rd(order, "payment_terms")),
+  }));
+
+  const [missingFields, setMissingFields] = useState<string[]>([]);
+  const [isSubmitting, startSubmitTransition] = useTransition();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
+  const [confirmedOrder, setConfirmedOrder] = useState<Record<string, unknown> | null>(null);
+
+  const hasBalance = totalAmt !== depositAmt;
+
+  function handleResubmit() {
+    const missing: string[] = [];
+    if (!clientName.trim()) missing.push("Customer Name");
+    if (!clientPhone.trim()) missing.push("Telephone Number");
+    if (!desc.trim()) missing.push("Job Description");
+    if (totalAmt <= 0) missing.push("Total Item Amount");
+    if (qty <= 0) missing.push("Quantity to Print");
+    if (!printType) missing.push("Print Type");
+    if (!materialSource) missing.push("Material Source");
+    if (depositAmt > 0 && !receiptNo.trim()) {
+      missing.push("Receipt Number (required since a deposit was entered)");
+    }
+    if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
+      missing.push("Sample With (required since a sample is marked attached)");
+    }
+
+    setMissingFields(missing);
+    if (missing.length > 0) return;
+
+    setSubmitError(null);
+    setSubmitWarnings([]);
+
+    // Build material_description_rows for PDF compatibility (app.py:3050-3060)
+    // — Python-only, stripped server-side before the insert, same as
+    // GarmentCartItem's own field.
+    const materialDescriptionRows = (() => {
+      const rows = materialDesc
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((material) => ({ material, sizes: finishedSize, colour: "" }));
+      if (rows.length > 0) return rows;
+      return [{ material: materialDesc, sizes: finishedSize, colour: "" }];
+    })();
+
+    const item = {
+      department: "GARMENT",
+      job_description: sanitizeString(desc),
+      total_amount: totalAmt,
+      deposit_amount: depositAmt,
+      receipt_no: depositAmt > 0 ? sanitizeString(receiptNo) : null,
+      balance_due_date: balanceDue,
+      date_of_collection: collectionDate,
+      qty_to_print: Math.trunc(qty),
+      print_type: printType,
+      type_of_print: printType,
+      material_source: materialSource,
+      delivery_mode: deliveryMode,
+      print_size: printSize,
+      finished_print_size: finishedSize,
+      yardage: finishedSize,
+      material_description: sanitizeString(materialDesc),
+      material_description_rows: materialDescriptionRows,
+      additional_comments: sanitizeString(additionalComments),
+      packaging_mode: packagingMode,
+      qty_to_pack: Math.trunc(qtyToPack),
+      packaging_specs: sanitizeString(packagingSpecs),
+      delivery_location: sanitizeString(deliveryLocation),
+      delivery_contact: sanitizeString(deliveryContact),
+      process_info: sanitizeString(processInfo),
+      paper_type: null,
+      gsm: null,
+      paper_size: null,
+      paper_colour: null,
+      impressions_colour: null,
+      binding_type: null,
+      laminating_type: null,
+    };
+
+    const fd = new FormData();
+    fd.set("originalParentGroupId", order.parent_group_id ?? "");
+    fd.set("clientName", clientName);
+    fd.set("clientPhone", clientPhone);
+    fd.set("item", JSON.stringify(item));
+    fd.set("sampleAttached", attachments.sampleAttached);
+    fd.set("sampleWith", attachments.sampleWith);
+    fd.set("is30Day", String(attachments.is30Day));
+    fd.set("termsNotes", attachments.termsNotes);
+    if (attachments.lpoFile) fd.set("lpoFile", attachments.lpoFile);
+    if (attachments.sampleFile) fd.set("sampleFile", attachments.sampleFile);
+
+    startSubmitTransition(async () => {
+      const result = await resubmitOrderAction(fd);
+      if (result.error) {
+        setSubmitError(result.error);
+        if (result.warnings) setSubmitWarnings(result.warnings);
+        return;
+      }
+      setConfirmedOrder(result.submitted?.[0] ?? null);
+      if (result.warnings) setSubmitWarnings(result.warnings);
+    });
+  }
+
+  return (
+    <div>
+      <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
+        <SectionHeader>Client Identity &amp; Contract Outline</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Customer Name ★">
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Telephone Number ★">
+            <input
+              type="text"
+              value={clientPhone}
+              onChange={(e) => setClientPhone(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+        <div className="mt-3">
+          <FormField label="Job / Item Description ★">
+            <textarea
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              rows={2}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <SectionHeader>Financial Ledgers &amp; Scheduling</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <FormField label={`Total Item Amount (${CURRENCY}) ★`}>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={totalAmt}
+              onChange={(e) => setTotalAmt(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label={`Deposit Paid (${CURRENCY})`}>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={depositAmt}
+              onChange={(e) => setDepositAmt(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Balance Deadline ★">
+            <input
+              type="date"
+              value={balanceDue}
+              onChange={(e) => setBalanceDue(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Collection Date ★">
+            <input
+              type="date"
+              value={collectionDate}
+              onChange={(e) => setCollectionDate(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+        <div className="mt-3 max-w-sm">
+          <FormField label="Receipt Number (required if a deposit is entered)">
+            <input
+              type="text"
+              value={receiptNo}
+              onChange={(e) => setReceiptNo(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <ResubmitAttachmentsSection state={attachments} setState={setAttachments} hasBalance={hasBalance} />
+
+        <SectionHeader>Production Quantity &amp; Sourcing</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Quantity to Print ★">
+            <input
+              type="number"
+              min={0}
+              step={10}
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Material Source ★">
+            <select
+              value={materialSource}
+              onChange={(e) => setMaterialSource(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {GARMENT_MATERIAL_SOURCE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+
+        <SectionHeader>Print Type &amp; Dimensions</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Print Type ★">
+            <select
+              value={printType}
+              onChange={(e) => setPrintType(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {GARMENT_PRINT_TYPE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Delivery Mode ★">
+            <select
+              value={deliveryMode}
+              onChange={(e) => setDeliveryMode(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {GARMENT_DELIVERY_MODE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Print Size">
+            <select
+              value={printSize}
+              onChange={(e) => setPrintSize(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {GARMENT_PRINT_SIZE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Finished Print Size / Yardage">
+            <select
+              value={finishedSize}
+              onChange={(e) => setFinishedSize(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {GARMENT_FINISHED_SIZE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+
+        <SectionHeader>Material Description</SectionHeader>
+        <div className="flex flex-col gap-3">
+          <FormField label="Material Description (fabric type, colour, etc.)">
+            <textarea
+              value={materialDesc}
+              onChange={(e) => setMaterialDesc(e.target.value)}
+              rows={2}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Additional Comments / Specifications">
+            <textarea
+              value={additionalComments}
+              onChange={(e) => setAdditionalComments(e.target.value)}
+              rows={2}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <SectionHeader>Packaging &amp; Delivery</SectionHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <FormField label="Packaging Mode">
+            <select
+              value={packagingMode}
+              onChange={(e) => setPackagingMode(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              {GARMENT_PACKAGING_MODE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o || "— Select —"}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Qty to Pack">
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={qtyToPack}
+              onChange={(e) => setQtyToPack(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Packaging Specs">
+            <input
+              type="text"
+              value={packagingSpecs}
+              onChange={(e) => setPackagingSpecs(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Delivery Location">
+            <input
+              type="text"
+              value={deliveryLocation}
+              onChange={(e) => setDeliveryLocation(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Delivery Contact Person">
+            <input
+              type="text"
+              value={deliveryContact}
+              onChange={(e) => setDeliveryContact(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+        </div>
+
+        <SectionHeader>Process / Technical Info</SectionHeader>
+        <FormField label="Process / Technical Information">
+          <textarea
+            value={processInfo}
+            onChange={(e) => setProcessInfo(e.target.value)}
+            rows={2}
+            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </FormField>
+
+        <div className="mt-4 rounded-at border border-at-border bg-at-bg px-4 py-2.5 text-xs text-at-slate">
+          Handled By: {userEmail} | Date: {today}
+        </div>
+
+        {missingFields.length > 0 && (
+          <div className="mt-3 text-sm font-semibold text-red-600">
+            Transaction blocked. Missing required fields: {missingFields.join(", ")}
+          </div>
+        )}
+        {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
+        {submitWarnings.map((w, i) => (
+          <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+            {w}
+          </div>
+        ))}
+
+        <div className="mt-4">
+          <Button disabled={isSubmitting} onClick={handleResubmit}>
+            {isSubmitting ? "RESUBMITTING…" : "🔄 RESUBMIT FOR MANAGEMENT APPROVAL"}
+          </Button>
+        </div>
+      </div>
+
+      {confirmedOrder && <ResubmitConfirmation ticket={confirmedOrder} />}
     </div>
   );
 }

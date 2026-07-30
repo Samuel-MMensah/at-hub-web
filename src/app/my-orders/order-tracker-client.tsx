@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { MetricCard } from "@/components/ui/metric-card";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
@@ -367,9 +368,9 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
                   Next Steps for Rejected Orders
                 </div>
                 <div className="text-sm leading-relaxed text-red-900">
-                  Rejected orders can be corrected and resubmitted through Raise Job Order once
-                  that route exists — the revised order re-enters the authorization queue
-                  automatically. (Modify &amp; Resubmit isn&apos;t wired up here yet.)
+                  Rejected orders can be corrected and resubmitted through Raise Job Order — the
+                  revised order re-enters the authorization queue automatically. Click
+                  &quot;Modify &amp; Resubmit&quot; on the order below to get started.
                 </div>
               </div>
             )}
@@ -571,6 +572,17 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
             Management Rejection Note
           </div>
           <div className="text-sm leading-relaxed text-red-900">{rejNote}</div>
+        </div>
+      )}
+
+      {status === "Rejected" && (
+        <div className="mb-4 flex justify-end">
+          <Link
+            href={`/raise-order?resubmit=${order.id}`}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-at-danger px-4 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-red-600"
+          >
+            🔄 Modify &amp; Resubmit
+          </Link>
         </div>
       )}
 
