@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
+import { parseTimestamptz } from "@/lib/parse-timestamptz";
+import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 
 export interface AuditOrderRow {
   id: number;
@@ -9,6 +12,7 @@ export interface AuditOrderRow {
   customer_name: string;
   status: string | null;
   created_by: string;
+  created_at: string | null;
   order_date: string | null;
   approved_by: string | null;
   approval_date: string | null;
@@ -99,6 +103,32 @@ export function AuditLogClient({ orders }: { orders: AuditOrderRow[] }) {
     });
   }, [orders, search, statusFilter]);
 
+  // Grouping happens AFTER filtering — `filtered` is the full matching
+  // set across every month, so a search/filter match can never end up
+  // hidden inside a collapsed section (see the defaultExpanded rule
+  // below). CSV export (downloadCsv) reads `filtered` directly, not
+  // anything month-scoped, so it stays unaffected by which months
+  // happen to be expanded/collapsed on screen.
+  const isFiltering = search.trim() !== "" || statusFilter.length > 0;
+
+  const monthGroups = useMemo(() => {
+    // created_at is confirmed live to be populated on every real row
+    // (checked directly against Supabase, not assumed) — this fallback
+    // bucket exists only so a genuinely unexpected null doesn't crash
+    // the page, not because null is expected in practice.
+    const withDate = filtered.filter((o) => o.created_at);
+    const withoutDate = filtered.filter((o) => !o.created_at);
+    const groups: MonthGroup<AuditOrderRow>[] = groupByMonth(withDate, (o) =>
+      parseTimestamptz(o.created_at as string)
+    );
+    if (withoutDate.length > 0) {
+      groups.push({ key: "", label: "Unknown Date", items: withoutDate });
+    }
+    return groups;
+  }, [filtered]);
+
+  const currentKey = currentMonthKey();
+
   function toggleStatus(status: string) {
     setStatusFilter((prev) =>
       prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
@@ -144,33 +174,42 @@ export function AuditLogClient({ orders }: { orders: AuditOrderRow[] }) {
 
       <div className="mb-2 text-xs font-semibold text-at-slate">{filtered.length} order(s)</div>
 
-      <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-at-border bg-at-bg">
-              {COLUMNS.map((col) => (
-                <th
-                  key={col}
-                  className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate"
-                >
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((order) => (
-              <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
-                {toRow(order).map((cell, i) => (
-                  <td key={i} className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                    {cell || "—"}
-                  </td>
+      {monthGroups.map((month) => (
+        <CollapsibleMonthGroup
+          key={month.key}
+          monthLabel={month.label}
+          itemCount={month.items.length}
+          defaultExpanded={month.key === currentKey || isFiltering}
+        >
+          <div className="-mx-4 -my-4 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-at-border bg-at-bg">
+                  {COLUMNS.map((col) => (
+                    <th
+                      key={col}
+                      className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate"
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {month.items.map((order) => (
+                  <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
+                    {toRow(order).map((cell, i) => (
+                      <td key={i} className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {cell || "—"}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+        </CollapsibleMonthGroup>
+      ))}
     </div>
   );
 }

@@ -7,6 +7,8 @@ import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
 import { parseLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
+import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
+import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 
 const CURRENCY = "GH₵";
 
@@ -182,6 +184,14 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
     });
   }, [orders, search, statusFilter]);
 
+  // Month grouping (inside OrderTab, per tab) happens AFTER this
+  // filtering — every tab's list is already the fully-matching set, so
+  // any month that ends up with content only ever contains matches.
+  // isFiltering drives CollapsibleMonthGroup's auto-expand: while a
+  // search/filter is active, every non-empty month is forced open so a
+  // match can never end up hidden inside a collapsed section.
+  const isFiltering = search.trim() !== "" || statusFilter.length > 0;
+
   const pendingOrders = filtered.filter((o) => o.status && PENDING_STATUSES.includes(o.status));
   const approvedOrders = filtered.filter((o) => o.status === "Approved");
   const rejectedOrders = filtered.filter((o) => o.status === "Rejected");
@@ -299,11 +309,11 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
       </div>
 
       <div className="mt-4">
-        {activeTab === "all" && <OrderTab orders={filtered} jobs={jobs} />}
+        {activeTab === "all" && <OrderTab orders={filtered} jobs={jobs} isFiltering={isFiltering} />}
 
         {activeTab === "pending" && (
           <>
-            <OrderTab orders={pendingOrders} jobs={jobs} />
+            <OrderTab orders={pendingOrders} jobs={jobs} isFiltering={isFiltering} />
             {pendingOrders.length > 0 && (
               <div className="mt-2 rounded-at border border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 p-4">
                 <div className="mb-1 text-xs font-bold uppercase tracking-wide text-amber-800">
@@ -321,7 +331,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
 
         {activeTab === "approved" && (
           <>
-            <OrderTab orders={approvedOrders} jobs={jobs} />
+            <OrderTab orders={approvedOrders} jobs={jobs} isFiltering={isFiltering} />
             {approvedOrders.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-8 rounded-at bg-gradient-to-br from-at-navy to-at-navy-soft p-4 text-at-white">
                 <div>
@@ -361,7 +371,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
 
         {activeTab === "rejected" && (
           <>
-            <OrderTab orders={rejectedOrders} jobs={jobs} />
+            <OrderTab orders={rejectedOrders} jobs={jobs} isFiltering={isFiltering} />
             {rejectedOrders.length > 0 && (
               <div className="mt-2 rounded-at border border-red-200 bg-red-50 p-4">
                 <div className="mb-1 text-xs font-bold uppercase tracking-wide text-red-800">
@@ -381,7 +391,58 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
   );
 }
 
-function OrderTab({ orders, jobs }: { orders: JobOrderRow[]; jobs: JobRow[] }) {
+interface BatchGroup {
+  key: string;
+  orders: JobOrderRow[];
+  // The batch's own created_at is the earliest of its line items' — in
+  // practice every item in a real batch shares (near-)identical
+  // created_at, since submitBatch() does one bulk insert, not a
+  // per-item loop. Using the minimum is the deterministic choice for
+  // the rare case that isn't exactly true, and it guarantees a batch is
+  // never split across two month sections regardless of any drift.
+  // null only if every item in the batch has a null created_at.
+  representativeDate: Date | null;
+}
+
+function computeBatches(orders: JobOrderRow[]): BatchGroup[] {
+  const sorted = [...orders].sort((a, b) => {
+    const at = a.created_at ? parseTimestamptz(a.created_at).getTime() : 0;
+    const bt = b.created_at ? parseTimestamptz(b.created_at).getTime() : 0;
+    return bt - at;
+  });
+
+  const map = new Map<string, JobOrderRow[]>();
+  for (const order of sorted) {
+    const key = groupKey(order);
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = [];
+      map.set(key, bucket);
+    }
+    bucket.push(order);
+  }
+
+  return Array.from(map.entries()).map(([key, group]) => {
+    const times = group
+      .map((o) => (o.created_at ? parseTimestamptz(o.created_at).getTime() : null))
+      .filter((t): t is number => t !== null);
+    return {
+      key,
+      orders: group,
+      representativeDate: times.length > 0 ? new Date(Math.min(...times)) : null,
+    };
+  });
+}
+
+function OrderTab({
+  orders,
+  jobs,
+  isFiltering,
+}: {
+  orders: JobOrderRow[];
+  jobs: JobRow[];
+  isFiltering: boolean;
+}) {
   if (orders.length === 0) {
     return (
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
@@ -390,79 +451,99 @@ function OrderTab({ orders, jobs }: { orders: JobOrderRow[]; jobs: JobRow[] }) {
     );
   }
 
-  const sorted = [...orders].sort((a, b) => {
-    const at = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return bt - at;
-  });
-
-  const seen: string[] = [];
-  for (const order of sorted) {
-    const key = groupKey(order);
-    if (!seen.includes(key)) seen.push(key);
+  const batches = computeBatches(orders);
+  // created_at is confirmed live to be populated on every real row
+  // (checked directly against Supabase) — this fallback bucket exists
+  // only so a genuinely unexpected null doesn't crash the page.
+  const withDate = batches.filter((b) => b.representativeDate !== null);
+  const withoutDate = batches.filter((b) => b.representativeDate === null);
+  const monthGroups: MonthGroup<BatchGroup>[] = groupByMonth(
+    withDate,
+    (b) => b.representativeDate as Date
+  );
+  if (withoutDate.length > 0) {
+    monthGroups.push({ key: "", label: "Unknown Date", items: withoutDate });
   }
+
+  const currentKey = currentMonthKey();
 
   return (
     <div>
-      {seen.map((key, idx) => {
-        const group = sorted.filter((order) => groupKey(order) === key);
-        const isMulti = group.length > 1;
+      {monthGroups.map((month) => (
+        <CollapsibleMonthGroup
+          key={month.key}
+          monthLabel={month.label}
+          itemCount={month.items.reduce((sum, batch) => sum + batch.orders.length, 0)}
+          defaultExpanded={month.key === currentKey || isFiltering}
+        >
+          {month.items.map((batch, idx) => (
+            <div key={batch.key}>
+              <BatchBlock batch={batch} jobs={jobs} />
+              {idx !== month.items.length - 1 && (
+                <hr className="my-5 border-t-2 border-slate-100" />
+              )}
+            </div>
+          ))}
+        </CollapsibleMonthGroup>
+      ))}
+    </div>
+  );
+}
 
-        return (
-          <div key={key}>
-            {isMulti && (
-              <div className="mb-3 mt-2 flex items-center justify-between rounded-at-lg border border-at-border bg-gradient-to-br from-at-bg to-slate-100 p-4">
-                <div>
-                  <div className="mb-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-at-slate">
-                    Batch Submission — {group.length} Line Items
-                  </div>
-                  <div className="text-lg font-extrabold text-at-navy">
-                    {group[0].customer_name || "—"}
-                  </div>
-                  <div className="mt-0.5 text-xs text-at-slate">
-                    Ref:{" "}
-                    <span className="text-at-accent">
-                      {key.startsWith("SOLO_") ? "Individual Submission" : key}
-                    </span>
-                    {" · "}Status:{" "}
-                    <strong>
-                      {Array.from(new Set(group.map((o) => (o.status ?? "").trim())))
-                        .sort()
-                        .join(", ")}
-                    </strong>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="mb-0.5 text-[0.62rem] uppercase tracking-wide text-at-slate-light">
-                    Batch Value
-                  </div>
-                  <div className="text-lg font-extrabold text-at-success">
-                    {moneySpaced(group.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0))}
-                  </div>
-                </div>
-              </div>
-            )}
+function BatchBlock({ batch, jobs }: { batch: BatchGroup; jobs: JobRow[] }) {
+  const { key, orders: group } = batch;
+  const isMulti = group.length > 1;
 
-            {group.map((order, itemIdx) => (
-              <div key={order.id}>
-                {isMulti && (
-                  <div className="mb-1.5 pl-1 text-[0.68rem] font-bold uppercase tracking-wide text-at-slate">
-                    Line Item {itemIdx + 1} of {group.length}
-                    {order.status?.trim() === "Pending Revision Approval" && (
-                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6rem] font-bold text-amber-800">
-                        REVISED
-                      </span>
-                    )}
-                  </div>
-                )}
-                <OrderCard order={order} jobs={jobs} />
-              </div>
-            ))}
-
-            {idx !== seen.length - 1 && <hr className="my-5 border-t-2 border-slate-100" />}
+  return (
+    <div>
+      {isMulti && (
+        <div className="mb-3 mt-2 flex items-center justify-between rounded-at-lg border border-at-border bg-gradient-to-br from-at-bg to-slate-100 p-4">
+          <div>
+            <div className="mb-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-at-slate">
+              Batch Submission — {group.length} Line Items
+            </div>
+            <div className="text-lg font-extrabold text-at-navy">
+              {group[0].customer_name || "—"}
+            </div>
+            <div className="mt-0.5 text-xs text-at-slate">
+              Ref:{" "}
+              <span className="text-at-accent">
+                {key.startsWith("SOLO_") ? "Individual Submission" : key}
+              </span>
+              {" · "}Status:{" "}
+              <strong>
+                {Array.from(new Set(group.map((o) => (o.status ?? "").trim())))
+                  .sort()
+                  .join(", ")}
+              </strong>
+            </div>
           </div>
-        );
-      })}
+          <div className="text-right">
+            <div className="mb-0.5 text-[0.62rem] uppercase tracking-wide text-at-slate-light">
+              Batch Value
+            </div>
+            <div className="text-lg font-extrabold text-at-success">
+              {moneySpaced(group.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {group.map((order, itemIdx) => (
+        <div key={order.id}>
+          {isMulti && (
+            <div className="mb-1.5 pl-1 text-[0.68rem] font-bold uppercase tracking-wide text-at-slate">
+              Line Item {itemIdx + 1} of {group.length}
+              {order.status?.trim() === "Pending Revision Approval" && (
+                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6rem] font-bold text-amber-800">
+                  REVISED
+                </span>
+              )}
+            </div>
+          )}
+          <OrderCard order={order} jobs={jobs} />
+        </div>
+      ))}
     </div>
   );
 }
