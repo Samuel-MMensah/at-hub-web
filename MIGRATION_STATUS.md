@@ -366,7 +366,8 @@ None — every route now has at least a Phase 1 built in Next.js.
 Same Supabase project the Streamlit app already uses. Confirmed tables:
 `job_orders`, `jobs`, `job_pipeline_status`, `profiles` (the first two
 are what Command Center and My Order Tracker read; `job_pipeline_status`
-hasn't been inspected/used yet).
+is read by Shop Floor Control's Production Pipeline visualization —
+`src/app/shop-floor/page.tsx` — not by Command Center itself).
 
 - `job_orders` filtered to `status in ('Approved', 'In Production', 'At
   Warehouse')` → activeOrders, contractValue, depositCollected,
@@ -408,13 +409,20 @@ Ports `app.py`'s "My Order Tracker" route (`get_all_db_job_orders_by_user()`
   Total Contract Value (`sum(total_amount)`, null as 0).
 - Personal analytics strip: My Approval Rate (approved ÷ total), My Avg
   Order Value (`sum(total_amount)` ÷ count), Avg Days to Approval.
-- **Avg Days to Approval uses `approved_at`, not `updated_at`.** This is
-  a deliberate deviation from the literal `app.py` source, not a bug
-  carried over: the source references `updated_at`, which does not
-  exist on `job_orders` (verified twice via live `information_schema`
-  queries this session). `approved_at` does exist and is what the
-  metric is actually meant to measure — averaged over `Approved` orders
-  where `approved_at` is not null, `—` if none qualify.
+- **Avg Days to Approval uses `approval_date`, not `updated_at` and not
+  `approved_at`.** This is a deliberate deviation from the literal
+  `app.py` source, not a bug carried over: the source references
+  `updated_at`, which does not exist on `job_orders` (verified twice
+  via live `information_schema` queries this session). `approved_at`
+  does exist as a column but is dead — confirmed live during
+  Authorization Center testing that no write path (including
+  `approveOrder`) ever populates it. `approval_date` is the column
+  that actually carries the approval timestamp (via
+  `formatLifecycleTimestamp`/`parseLifecycleTimestamp`, see "Shared
+  infrastructure") — averaged over `Approved` orders where
+  `approval_date` is not null, `—` if none qualify. This metric was
+  found dead mid-session (reading the wrong column, always `—`) and
+  fixed; see `order-tracker-client.tsx`'s comment at the filter site.
 - Search (customer name / order no / description, case-insensitive
   substring) + status filter, combined as AND. Tab counts (All /
   Pending / Approved / Rejected) are recomputed from the filtered set,
@@ -490,9 +498,11 @@ doc.
 ## Shared infrastructure
 
 - `isGarment()` (ports `_is_garment()` from app.py) lives in
-  `src/lib/is-garment.ts`, shared by Command Center and My Order
-  Tracker. Was duplicated locally in Command Center before My Order
-  Tracker was built; extracted as a refactor, not a behavior change.
+  `src/lib/is-garment.ts`. Was duplicated locally in Command Center
+  before My Order Tracker was built; extracted as a refactor, not a
+  behavior change. Now imported by five files, not just those original
+  two: Command Center, My Order Tracker, Production Board, Archive, and
+  Authorization Center.
 - `MetricCard` (`src/components/ui/metric-card.tsx`) has an optional
   `borderColor` prop, defaulting to `accentColor` when omitted
   (backward compatible with every existing call site). Added because
@@ -500,10 +510,13 @@ doc.
   than the value text on 4 of 5 cards, and the component previously
   only supported one color driving both.
 - `parseTimestamptz()` lives in `src/lib/parse-timestamptz.ts` — shared
-  rather than local to My Order Tracker, since Production Board and
-  Shop Floor Control will need the same `jobs.finish_time`/
-  `revised_finish` parsing. See "Known gaps" for its
-  unverified-against-real-data caveat.
+  rather than local to My Order Tracker. Now imported by four files:
+  My Order Tracker's pipeline banner, Shop Floor Control (both
+  `shop-floor-client.tsx` and `actions.ts`), and Production Layout
+  Builder's `scheduling.ts` (for `getMachineNextAvailableTime`'s
+  backlog lookup). See "Known gaps" for its verification caveat, which
+  is narrower than it used to be now that several of these call sites
+  have run against real `jobs` rows.
 - `PdfPreviewButton` (`src/components/ui/pdf-preview-button.tsx`) —
   fetches the PDF as a blob (with the `Authorization: Bearer` token from
   `supabase.auth.getSession()`), renders it in an `<iframe>` modal with
@@ -572,23 +585,24 @@ doc.
   this). It closes the realistic single-operator, single-tab case; real
   write-layer idempotency (e.g. a version/timestamp check in the update)
   would be a separate, larger fix if this ever needs to be airtight.
-- `parseTimestamptz()` (`src/lib/parse-timestamptz.ts`, shared — not
-  local to one route, since Production Board and Shop Floor Control
-  will need the same `finish_time`/`revised_finish` handling; currently
-  only called from My Order Tracker's pipeline banner) has a
-  UTC-forcing fallback for values that arrive without a timezone offset
-  — but this is **unverified against real data**. `jobs` was empty for
-  the entire session this was built in, so no live row was ever
-  inspected; the fallback is based only on `timestamptz`'s documented
-  Postgres/PostgREST behavior, not an observed value.
-  Once `jobs` has real rows with a non-null `finish_time`/
-  `revised_finish`, load a Production Board or Shop Floor Control page
-  (or query directly) and confirm `parseTimestamptz`'s `console.error`
-  did **not** fire. If it does fire — i.e. a real row is missing a
-  timezone offset — that means the `timestamptz` column type is being
-  violated somewhere upstream (e.g. the insert path writing a naive
-  string). That's worth escalating and fixing at the source, not
-  silently working around again in this function.
+- `parseTimestamptz()` (`src/lib/parse-timestamptz.ts`, shared — now
+  actually imported by four files: My Order Tracker's pipeline banner,
+  Shop Floor Control's `shop-floor-client.tsx` and `actions.ts`, and
+  Production Layout Builder's `scheduling.ts`) has a UTC-forcing
+  fallback for values that arrive without a timezone offset. `jobs`
+  is no longer the empty table this note originally described — it's
+  had real rows multiple times since (Production Layout Builder's
+  live scheduling test, several Shop Floor Operator Update cascade
+  tests), and those rows flowed through this function without a
+  crash. What's still open in the narrow, literal sense: nobody has
+  explicitly watched a browser console during one of those loads to
+  confirm the UTC-forcing `console.error` fallback path never fired
+  — it's inferred from the absence of a crash, not directly observed.
+  If it ever does fire — i.e. a real row is missing a timezone offset
+  — that means the `timestamptz` column type is being violated
+  somewhere upstream (e.g. the insert path writing a naive string).
+  That's worth escalating and fixing at the source, not silently
+  working around again in this function.
 - **PDF signature line looks wrong when `approved_by` holds an email
   instead of a name** — e.g. "E. — enoch.obeng@appointedtime.com.gh"
   instead of a name-shaped signature. `_build_sig()`'s initials logic
@@ -615,6 +629,27 @@ doc.
   shipped; fixed in this session to read `approval_date` via the new
   `parseLifecycleTimestamp()` helper (`src/lib/lifecycle-timestamp.ts`)
   instead.
+- **Command Center's `pendingApprovals` KPI never matched any real
+  row — found during a doc audit, now fixed.**
+  `src/app/command-center/page.tsx` queried `job_orders` filtered to
+  `status = 'Pending'`, but every real/live status value confirmed
+  this session is `'Pending Approval'` or `'Pending Revision
+  Approval'` — the bare string `'Pending'` is never actually written
+  by any path. Traced end-to-end via grep: `pendingRes.count` →
+  `pendingApprovals` → `AppShell`'s `pendingApprovalsCount` prop →
+  `Sidebar`'s badge next to Authorization Center in the nav
+  (`item.badgeKey === "pendingApprovals" ? pendingApprovalsCount : 0`).
+  So that badge had been silently showing 0 regardless of how many
+  orders were actually awaiting approval. **Fixed** by switching the
+  query to `.in("status", PENDING_STATUSES)` with the exact same
+  `PENDING_STATUSES = ["Pending Approval", "Pending Revision
+  Approval"]` list Authorization Center's own `page.tsx` already uses
+  and has proven — not a new pattern. Confirmed live via direct query
+  that 0 real rows currently match that filter, so a throwaway
+  `Pending Approval` test row (`id=94`, `TEST - DO NOT SHIP
+  (pendingApprovals-badge-test)`) was inserted to verify the sidebar
+  badge actually moves off 0 — see the fix's own note for whether that
+  visual check and cleanup have completed.
 
 ## Rules to keep following
 
@@ -697,9 +732,12 @@ resolved scope question above.
 
 - Write the RLS policies `nav-config.ts` implies, so access control
   doesn't rest solely on the app layer.
-- Continue Raise Job Order: Phase 2 (Garment cart) is the natural next
-  step, then Phase 3 (the real batch submit — this is the last route
-  in the app still doing zero database writes).
+- Fix Command Center's `pendingApprovals` KPI (`src/app/command-center/
+  page.tsx`) — it queries `status = 'Pending'`, a value no real row
+  ever has (real values are `'Pending Approval'` /
+  `'Pending Revision Approval'`); this silently zeroes the count that
+  feeds `AppShell`/`Sidebar`'s pending-approvals nav badge. Found
+  during this audit, not yet fixed — see "Known gaps".
 - Port `send_departmental_alert` + the `notify_*` functions into
   `backend/app/email.py` so Authorization Center's approve/reject
   notifications (currently omitted, see "What's NOT done yet") can be

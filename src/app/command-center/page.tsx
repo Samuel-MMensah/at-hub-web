@@ -19,6 +19,12 @@ const CURRENCY = "GH₵";
 // Collection' (those belong to get_archive_orders_cached() instead).
 const ACTIVE_ORDER_STATUSES = ["Approved", "In Production", "At Warehouse"];
 
+// Matches Authorization Center's own PENDING_STATUSES (src/app/authorization/
+// page.tsx) — the real statuses a pending order can have. Previously this
+// queried status = 'Pending', a value no real row ever has, so this KPI (and
+// the sidebar badge it feeds) always silently read 0.
+const PENDING_STATUSES = ["Pending Approval", "Pending Revision Approval"];
+
 interface OrderRow extends GarmentClassifiable {
   job_order_no: string | null;
   total_amount: number | null;
@@ -64,7 +70,7 @@ async function getKpis() {
     supabase
       .from("job_orders")
       .select("id", { count: "exact", head: true })
-      .eq("status", "Pending"),
+      .in("status", PENDING_STATUSES),
     supabase
       .from("jobs")
       .select("tracking_id, ups, finish_time, machine, job_name, contract_value")
