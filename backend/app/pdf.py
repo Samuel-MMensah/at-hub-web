@@ -19,6 +19,7 @@ the original. Confirmed via a real generated PDF before changing this.
 from __future__ import annotations
 
 import io
+import re
 from datetime import datetime
 
 from reportlab.lib import colors
@@ -35,6 +36,19 @@ def _is_garment(row: dict) -> bool:
         return True
     pt = str(row.get("type_of_print") or row.get("print_type") or "").strip().upper()
     return pt in ("DTF", "UV-DTF", "SAV", "EMBROIDERY", "FLEXI SCREEN PRINT")
+
+
+def sanitize_customer_name_for_filename(name: str | None, max_length: int = 40) -> str:
+    """Makes a real customer_name safe to drop straight into a
+    Content-Disposition filename -- real names carry commas, ampersands,
+    parentheses, slashes etc. that are unsafe there unescaped. Strips
+    anything that isn't alphanumeric/space/hyphen, then collapses
+    whitespace to underscores, then truncates. Falls back to "Customer"
+    if the name is missing or sanitizes down to nothing.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9 -]", "", name or "").strip()
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    return cleaned[:max_length] or "Customer"
 
 
 def generate_pdf_manifest(ticket: dict) -> io.BytesIO:

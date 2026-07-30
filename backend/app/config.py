@@ -25,6 +25,11 @@ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_SENDER_EMAIL = os.environ.get("RESEND_SENDER_EMAIL", "onboarding@resend.dev")
 
+# Collection-alert recipients — mirrors app.py's _collection_alert_recipients:
+# two slots, each may itself be a comma-separated list.
+NOTIFY_EMAIL_1 = os.environ.get("NOTIFY_EMAIL_1", "")
+NOTIFY_EMAIL_2 = os.environ.get("NOTIFY_EMAIL_2", "")
+
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")

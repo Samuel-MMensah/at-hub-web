@@ -24,5 +24,9 @@ services:
         sync: false
       - key: RESEND_SENDER_EMAIL
         sync: false
+      - key: NOTIFY_EMAIL_1
+        sync: false
+      - key: NOTIFY_EMAIL_2
+        sync: false
       - key: ALLOWED_ORIGINS
         sync: false

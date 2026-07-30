@@ -20,6 +20,7 @@ const SALES_REP_NAMES = [
   "Christian Mante",
   "Jacqueline Afful",
   "Mohammed Seidu Bunyamin",
+  "Elizabeth Addo Obeng",
 ];
 const SALES_REP_SENTINEL = "— None / Walk-in —";
 

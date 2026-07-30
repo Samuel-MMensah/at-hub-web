@@ -34,7 +34,8 @@ from pydantic import BaseModel
 
 from app.auth import require_user
 from app.config import ALLOWED_ORIGINS
-from app.pdf import _is_garment, dispatch_pdf_manifest
+from app.email import handle_overdue_alert
+from app.pdf import _is_garment, dispatch_pdf_manifest, sanitize_customer_name_for_filename
 from app.supabase_client import get_supabase
 
 app = FastAPI(title="Appointed Time — Support Service")
@@ -81,7 +82,8 @@ def generate_manifest(payload: ManifestRequest, user=Depends(require_user)):
     pdf_buffer = dispatch_pdf_manifest(ticket)
 
     order_no = ticket.get("job_order_no") or "PENDING"
-    filename = f"{'Garment' if _is_garment(ticket) else ''}Manifest_{order_no}.pdf"
+    customer = sanitize_customer_name_for_filename(ticket.get("customer_name"))
+    filename = f"{'Garment' if _is_garment(ticket) else ''}Manifest_{customer}_{order_no}.pdf"
 
     return Response(
         content=pdf_buffer.getvalue(),
@@ -94,3 +96,20 @@ def generate_manifest(payload: ManifestRequest, user=Depends(require_user)):
 def departmental_alert():
     # TODO: port from messaging.py's send_departmental_alert
     raise NotImplementedError("Port send_departmental_alert from messaging.py here.")
+
+
+class CollectionOverdueRequest(BaseModel):
+    order_id: int
+
+
+@app.post("/email/collection-overdue")
+def collection_overdue_alert(payload: CollectionOverdueRequest, user=Depends(require_user)):
+    """
+    Command Center (a Next.js Server Component) identifies candidate
+    order ids from data it already has and calls this once per
+    candidate on every page load -- the dedup claim and the send both
+    happen here, backend-side, not as a write from the Server
+    Component itself. See handle_overdue_alert for the atomicity
+    argument.
+    """
+    return handle_overdue_alert(payload.order_id)

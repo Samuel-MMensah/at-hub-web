@@ -26,10 +26,67 @@ const ACTIVE_ORDER_STATUSES = ["Approved", "In Production", "At Warehouse"];
 const PENDING_STATUSES = ["Pending Approval", "Pending Revision Approval"];
 
 interface OrderRow extends GarmentClassifiable {
+  id: number;
   job_order_no: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
   created_at: string | null;
+  date_of_collection: string | null;
+}
+
+// Ports app.py's C8a overdue-collection-alert trigger, scoped to the
+// OVERDUE branch only (days_remaining < 0) — the sibling "due in N
+// days" reminder and the warehouse-aging alert aren't built here, not
+// requested. Unlike the source (Streamlit st.session_state — scoped to
+// one browser tab, resets on every refresh, so the same order can and
+// does re-alert repeatedly in the real system), the dedup here is a
+// real DB column + an atomic conditional UPDATE on the backend — see
+// backend/app/email.py's handle_overdue_alert for the actual
+// claim-then-send logic and why it can't double-fire.
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+function daysRemaining(dateOfCollection: string): number {
+  const collection = new Date(`${dateOfCollection}T00:00:00Z`);
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((collection.getTime() - todayUtc) / (24 * 60 * 60 * 1000));
+}
+
+// Identifies candidates from data getKpis() already fetched (pure read),
+// then hands each one to the backend — the actual dedup claim and the
+// email send both happen there, not as a write from this Server
+// Component. A failed request here is logged and swallowed so a backend
+// hiccup never breaks the Command Center page load.
+async function triggerOverdueCollectionAlerts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orders: OrderRow[]
+) {
+  if (!BACKEND_URL) return;
+
+  const candidates = orders.filter((row) => {
+    if (!row.date_of_collection) return false;
+    const balance = Number(row.total_amount ?? 0) - Number(row.deposit_amount ?? 0);
+    return balance > 0 && daysRemaining(row.date_of_collection) < 0;
+  });
+  if (candidates.length === 0) return;
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) return;
+
+  await Promise.all(
+    candidates.map((row) =>
+      fetch(`${BACKEND_URL}/email/collection-overdue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ order_id: row.id }),
+      }).catch((err) => {
+        console.error("Overdue collection alert request failed for order", row.id, err);
+      })
+    )
+  );
 }
 
 interface JobRow {
@@ -64,7 +121,7 @@ async function getKpis() {
     supabase
       .from("job_orders")
       .select(
-        "job_order_no, total_amount, deposit_amount, department, type_of_print, print_type, created_at"
+        "id, job_order_no, total_amount, deposit_amount, department, type_of_print, print_type, created_at, date_of_collection"
       )
       .in("status", ACTIVE_ORDER_STATUSES),
     supabase
@@ -84,6 +141,8 @@ async function getKpis() {
   const orders = (ordersRes.data ?? []) as OrderRow[];
   const jobs = (jobsRes.data ?? []) as JobRow[];
   const trendRows = (trendRes.data ?? []) as TrendOrderRow[];
+
+  await triggerOverdueCollectionAlerts(supabase, orders);
 
   const contractValue = orders.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
   const depositCollected = orders.reduce((sum, row) => sum + Number(row.deposit_amount ?? 0), 0);

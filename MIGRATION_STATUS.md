@@ -9,6 +9,8 @@ hosting/keys setup.
 
 - `/login` — real Supabase Auth (email/password), not a mock.
 - `/command-center` — real Supabase queries for every KPI, not mock data.
+  Also fires the overdue-collection-alert side effect on every load —
+  see "Backend service — overdue collection alert" below.
 - `/my-orders` (My Order Tracker) — real Supabase data (the signed-in
   user's own `job_orders`, plus related `jobs` rows for the pipeline
   banner), not mock data. See "Data layer (My Order Tracker)" below.
@@ -228,7 +230,12 @@ hosting/keys setup.
     Attachments & Terms section added to both carts (LPO/sample file
     upload, Sample Attached/With, 30-Day Credit Terms checkbox, Sales
     Rep dropdown — exact `SALES_REP_EMAILS` name list, verified fresh
-    from source rather than assumed — Payment Terms Notes shown only
+    from source rather than assumed (`SALES_REP_NAMES` in
+    `raise-order-client.tsx`, shared by both Press and Garment forms —
+    confirmed the only such list in the codebase before adding to it
+    rather than creating a second one; **"Elizabeth Addo Obeng" added
+    post-launch**, not part of the original source list) — Payment
+    Terms Notes shown only
     when the batch has an outstanding balance). `parent_group_id`
     generated client-side per this task's explicit instruction (opaque
     batch identifier, not scheduling-critical — threaded through both
@@ -483,6 +490,18 @@ this is meant to reflect DB truth), and returns the PDF bytes.
   test that specifically simulates the CORS preflight + `Origin`
   header). Any future endpoint that needs a browser to read a custom
   response header cross-origin will hit this same class of bug.
+- **Filename now includes the customer name, sanitized.** Was
+  `Manifest_{job_order_no}.pdf` / `GarmentManifest_{job_order_no}.pdf`;
+  now `Manifest_{sanitized_customer_name}_{job_order_no}.pdf` (filename
+  construction itself lives in `backend/app/main.py`, not `pdf.py` —
+  `pdf.py` only builds the PDF byte buffer). New helper
+  `sanitize_customer_name_for_filename()` (`backend/app/pdf.py`) strips
+  anything not alphanumeric/space/hyphen, collapses whitespace to
+  underscores, truncates to 40 chars, falls back to `"Customer"` if the
+  name is missing or sanitizes to nothing. Tested against 6 real live
+  customer names with real punctuation (e.g. `"ZOOMLION GHANA
+  LTD(TINA)"` → `ZOOMLION_GHANA_LTDTINA`), not just a clean synthetic
+  name, plus `None`/empty/all-punctuation/truncation edge cases.
 - **Cedi glyph fix:** both PDF generators now use literal `"GHC"` text
   for Total/Deposit/Balance labels. The source itself was inconsistent
   — `generate_pdf_manifest` already used `"GHC"`; only
@@ -494,6 +513,101 @@ this is meant to reflect DB truth), and returns the PDF bytes.
 Exact logic lives in `backend/app/pdf.py`, `backend/app/main.py`, and
 `backend/app/auth.py` — these files are the source of truth, not this
 doc.
+
+## Backend service — overdue collection alert
+
+New feature, not part of any prior route's original migration scope —
+`notify_collection_due` (app.py:588) and its Command Center trigger
+loop (app.py:2614-2647) had never been ported before this. Scoped
+deliberately narrow: only the OVERDUE branch (`days_remaining < 0 AND
+balance > 0`), not the sibling "due in N days" reminder or
+`notify_warehouse_aging` — neither was requested.
+
+- **Real persistent dedup, fixing a genuine bug in the source.**
+  app.py's dedup is `st.session_state`-keyed (`notif_coll_{id}`) —
+  scoped to one browser tab, reset on every refresh or new session, so
+  in the real deployed system the same overdue order re-triggers an
+  email every time anyone reloads Command Center. This is not
+  preserved. Instead: a real column, `job_orders.overdue_alert_sent`
+  (`boolean NOT NULL DEFAULT false`), and an atomic claim-then-send —
+  `handle_overdue_alert()` in `backend/app/email.py` issues
+  `UPDATE job_orders SET overdue_alert_sent = true WHERE id = ? AND
+  overdue_alert_sent = false`, and only sends if that update actually
+  affected a row. Two people loading Command Center at the same instant
+  can't both win: the loser's conditional UPDATE matches zero rows.
+  Verified live via a standalone script
+  (`backend/scripts/verify_overdue_alert.py`) — first call claims and
+  persists the flag, a second and third call (simulating a reload and a
+  simultaneous second viewer) both correctly no-op.
+- **Wiring**: Command Center's `getKpis()` (`src/app/command-center/
+  page.tsx`) — a Server Component — only *identifies* candidates from
+  data it already fetches (pure read, no write). Each candidate id is
+  POSTed to a new backend endpoint, `POST /email/collection-overdue`,
+  which owns both the atomic claim and the actual send. The claim/send
+  logic deliberately does **not** live in the Server Component itself —
+  routed through the backend the same way PDF generation is, so a
+  database write is never a side effect of rendering a page.
+- **One-time backfill at launch, not a repeatable pattern.** The moment
+  this feature went live, 4 real pre-existing orders already qualified
+  as overdue (P035726, P898397, P257368, P259000) — they'd been sitting
+  overdue before the feature existed to alert on them. Left as-is, the
+  very first Command Center load after deploy would have dumped 4
+  alert emails on staff simultaneously for orders that, in some cases,
+  had already been overdue for days — a backlog dump, not the "alert
+  the moment it happens" behavior the feature is actually for. So
+  before the feature went live for real, these 4 were manually marked
+  `overdue_alert_sent = true` via a direct one-time update (verified:
+  exactly 4 rows affected, confirmed independently that no other row in
+  the table has the flag set). This is **only correct as a one-time
+  launch action** — every order that goes overdue from this point
+  forward still alerts normally, exactly once, through the real
+  claim-then-send path. Don't repeat this backfill pattern for future
+  orders; it would suppress alerts that should fire.
+- **`_email_shell()` HTML-escapes every interpolated value —
+  deliberate deviation from source.** app.py's version builds the
+  email HTML via raw f-string interpolation of DB-sourced fields
+  (`customer_name`, `job_order_no`, etc.) with no escaping — a customer
+  name containing `&`, `<`, or `>` would either break the table markup
+  or inject raw HTML into an email a real staff member opens. Caught
+  during live verification (a real send, real customer names from the
+  live DB were the trigger for checking this at all), fixed by wrapping
+  every interpolated value in `html.escape()`. Verified live: a
+  synthetic order with `customer_name = "A & B Enterprises <Test>"`
+  triggered a real send; the reconstructed HTML showed the literal
+  escaped text (`A &amp; B Enterprises &lt;Test&gt;`), confirmed
+  visually by the user directly, not just via the reconstruction
+  script. **Forward-looking note**: `_email_shell` is the one shared
+  HTML letterhead every future `notify_*` port will funnel through
+  (approval/rejection notifications, `send_departmental_alert`, etc. —
+  see "What's NOT done yet"). Whenever `messaging.py`'s equivalent
+  functions are eventually ported, they inherit this fix automatically
+  by reusing this same function — but if any future port ever builds
+  its own separate HTML string instead of going through
+  `_email_shell()`, it needs the same `html.escape()` treatment
+  applied independently; confirmed by grep that no such second
+  HTML-building function exists anywhere in the codebase yet.
+- **Live-send testing surfaced a real config mistake, now fixed.**
+  `RESEND_API_KEY` was assumed unset (based on a flawed grep pattern
+  that didn't match the `.env` file's actual `KEY = "value"` spacing)
+  and was actually live, so the first verification run sent a real
+  email to real staff with synthetic test data. Recipient fallback list
+  in `_collection_alert_recipients()` was corrected per explicit
+  instruction as a result: source's hardcoded fallback (misspelled
+  `emmanuel.ametepe@...`, missing `enoch.obeng@...` — present in
+  app.py's sibling `_approval_recipients()` but not this function) is
+  now `jacqueline.afful@`, `emmanuel.ametefe@`, `enoch.obeng@` — a
+  deliberate deviation from the source's fallback list, documented in
+  code.
+- New config: `NOTIFY_EMAIL_1`/`NOTIFY_EMAIL_2` (`backend/app/
+  config.py`, `.env.example`, `render.yaml`) — same two-slot,
+  comma-separated-list convention as `_collection_alert_recipients()`
+  in source.
+
+Exact logic lives in `backend/app/email.py` (`handle_overdue_alert`,
+`notify_collection_overdue`, `_email_shell`, `_collection_alert_recipients`,
+`_send_resend_email`), `backend/app/main.py`'s `/email/collection-overdue`
+endpoint, and `src/app/command-center/page.tsx`'s `triggerOverdueCollectionAlerts` —
+these files are the source of truth, not this doc.
 
 ## Shared infrastructure
 
@@ -644,12 +758,12 @@ doc.
   query to `.in("status", PENDING_STATUSES)` with the exact same
   `PENDING_STATUSES = ["Pending Approval", "Pending Revision
   Approval"]` list Authorization Center's own `page.tsx` already uses
-  and has proven — not a new pattern. Confirmed live via direct query
-  that 0 real rows currently match that filter, so a throwaway
-  `Pending Approval` test row (`id=94`, `TEST - DO NOT SHIP
-  (pendingApprovals-badge-test)`) was inserted to verify the sidebar
-  badge actually moves off 0 — see the fix's own note for whether that
-  visual check and cleanup have completed.
+  and has proven — not a new pattern. Verified live: 0 real rows
+  matched the filter, so a throwaway `Pending Approval` test row
+  (`id=94`, `TEST - DO NOT SHIP (pendingApprovals-badge-test)`) was
+  inserted, the sidebar badge was confirmed to move off 0 to reflect
+  it, and the test row was then deleted (confirmed gone via a
+  follow-up query — 0 `TEST`-named rows remain in `job_orders`).
 
 ## Rules to keep following
 
