@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
+import { triggerBackendEmail } from "@/lib/notify-backend";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -169,6 +170,16 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
 
   if (error) {
     return { error: error.message, warnings: warnings.length > 0 ? warnings : undefined };
+  }
+
+  // Email #1 (new-order-submitted) — best-effort, matches source's own
+  // try/except-wrapped notification call: never blocks the batch from
+  // being reported as submitted. Passes every inserted row's id, not a
+  // payload — the backend re-fetches and sums total_amount itself, see
+  // handle_order_submitted's docstring.
+  const insertedIds = (data ?? []).map((row) => row.id as number).filter((id) => typeof id === "number");
+  if (insertedIds.length > 0) {
+    await triggerBackendEmail(supabase, "/email/order-submitted", { order_ids: insertedIds });
   }
 
   revalidatePath("/raise-order");

@@ -28,5 +28,21 @@ services:
         sync: false
       - key: NOTIFY_EMAIL_2
         sync: false
+      - key: APPROVAL_NOTIFY_EMAILS
+        sync: false
+      - key: APPROVAL_CC_EMAILS
+        sync: false
+      - key: SCHEDULER_NOTIFY_EMAILS
+        sync: false
+      - key: WAREHOUSE_NOTIFY_EMAILS
+        sync: false
+      - key: FINANCE_NOTIFY_EMAILS
+        sync: false
+      - key: DEPT_EMAILS_PRESS
+        sync: false
+      - key: DEPT_EMAILS_GARMENT
+        sync: false
+      - key: APP_URL
+        sync: false
       - key: ALLOWED_ORIGINS
         sync: false

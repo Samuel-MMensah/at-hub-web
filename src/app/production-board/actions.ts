@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { formatLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
+import { triggerBackendEmail } from "@/lib/notify-backend";
 
 interface ActionResult {
   error?: string;
@@ -36,11 +37,8 @@ export async function startProduction(orderId: number): Promise<ActionResult> {
   return {};
 }
 
-// notify_sent_to_warehouse() is skipped here — it depends on the backend
-// service (still a NotImplementedError stub). The original itself treats
-// this notification as best-effort (wrapped in try/except, failure
-// doesn't block the status update), so omitting it entirely is a safe
-// subset of that behavior, not a deviation from it.
+// Email #6 (notify_sent_to_warehouse) fires here now, best-effort —
+// matches the source's own try/except-wrapped, non-blocking treatment.
 //
 // No warehouse_date write here — confirmed via a live "42703: column
 // does not exist" error that this column genuinely doesn't exist on
@@ -61,6 +59,8 @@ export async function sendToWarehouse(orderId: number): Promise<ActionResult> {
   if (error) {
     return { error: error.message };
   }
+
+  await triggerBackendEmail(supabase, "/email/sent-to-warehouse", { order_id: orderId });
 
   revalidatePath("/production-board");
   return {};

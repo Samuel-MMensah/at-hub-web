@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, hasRole } from "@/lib/nav-config";
 import { formatLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
+import { triggerBackendEmail } from "@/lib/notify-backend";
 
 interface ActionResult {
   error?: string;
@@ -32,13 +33,12 @@ async function requireAuthorizationAccess() {
 // submit from re-approving a row some other admin already actioned —
 // same guard pattern as production-board/actions.ts's startProduction.
 //
-// notify_order_approved / notify_needs_scheduling / send_departmental_alert
-// are skipped here — same precedent as production-board/actions.ts's
-// sendToWarehouse: the backend notification endpoints are still
-// NotImplementedError stubs (backend/app/main.py), and the source itself
-// treats every one of these calls as best-effort (wrapped in
-// try/except, never blocking the status write) — omitting them is a
-// safe subset of that behavior, not a deviation from it.
+// Emails #2 (notify_order_approved), #3 (notify_needs_scheduling), and
+// #4 (send_departmental_alert) all fire here, best-effort, via a
+// single backend call (POST /email/order-approved) that attempts all
+// three independently server-side — see handle_order_approved's
+// docstring for why they're independent attempts, not one that can
+// silently skip the others.
 export async function approveOrder(orderId: number): Promise<ActionResult> {
   const user = await requireAuthorizationAccess();
 
@@ -56,6 +56,8 @@ export async function approveOrder(orderId: number): Promise<ActionResult> {
   if (error) {
     return { error: error.message };
   }
+
+  await triggerBackendEmail(supabase, "/email/order-approved", { order_id: orderId });
 
   revalidatePath("/authorization");
   return {};
@@ -86,6 +88,9 @@ export async function rejectOrder(orderId: number, rejectionNote: string): Promi
   if (error) {
     return { error: error.message };
   }
+
+  // Email #5 (notify_order_rejected) — best-effort.
+  await triggerBackendEmail(supabase, "/email/order-rejected", { order_id: orderId });
 
   revalidatePath("/authorization");
   return {};

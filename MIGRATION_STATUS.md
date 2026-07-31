@@ -652,17 +652,33 @@ these files are the source of truth, not this doc.
   intended source of truth to translate into Postgres RLS — right now,
   access control is enforced by the app (session check + client-side nav
   gating), not by the database.
-- Email sending is still a stub in `backend/app/main.py`
-  (`NotImplementedError`) — PDF generation is done (see "Backend
-  service — PDF manifest generation"), email is not.
 - Raise Job Order's quick-fill from past customer
   (`get_recent_customers()`) — the one remaining piece of that route,
   deliberately deferred (see "Routes migrated"); every write-path phase
   (1-5, including Modify & Resubmit) is done.
-- Authorization Center's four approve/reject notifications
-  (`notify_order_approved`, `notify_needs_scheduling`,
-  `send_departmental_alert`, `notify_order_rejected`) — deferred until
-  `backend/app/main.py`'s email endpoints exist. See "Routes migrated".
+- **All seven deferred notifications are code-complete and live-tested
+  (see `backend/app/email.py`), but NOT fully operational in
+  production yet — this is a configuration gap, not a code gap.**
+  - Six (`_approval_recipients`, `_approval_cc_recipients`,
+    `_scheduler_recipients`, `_warehouse_recipients`,
+    `_finance_recipients`) fall back to real hardcoded addresses if
+    their env var (`APPROVAL_NOTIFY_EMAILS`, `APPROVAL_CC_EMAILS`,
+    `SCHEDULER_NOTIFY_EMAILS`, `WAREHOUSE_NOTIFY_EMAILS`,
+    `FINANCE_NOTIFY_EMAILS`) is unset in Render — they work today
+    either way, but whether they're currently sending to the real
+    fallback addresses or to values actually configured in Render's
+    Environment tab is **unknown from this side**: nothing in this
+    codebase or its tooling has ever had access to Render's dashboard,
+    so this has never been checked and can't be confirmed here — only
+    checkable directly in Render.
+  - The seventh, `send_departmental_alert`, has NO fallback by
+    design — confirmed live: an unconfigured `DEPT_EMAILS_PRESS` /
+    `DEPT_EMAILS_GARMENT` makes it silently do nothing (logged, not an
+    error). This is the one notification that sends **zero** real
+    email in production until those two are set in Render.
+  - `APP_URL` (the departmental alert's optional "Open Appointed Time
+    Hub" link) degrades gracefully if unset — the button is just
+    omitted, not broken — but points nowhere real until set.
 
 ## Known gaps
 
@@ -846,13 +862,14 @@ resolved scope question above.
 
 - Write the RLS policies `nav-config.ts` implies, so access control
   doesn't rest solely on the app layer.
-- Fix Command Center's `pendingApprovals` KPI (`src/app/command-center/
-  page.tsx`) — it queries `status = 'Pending'`, a value no real row
-  ever has (real values are `'Pending Approval'` /
-  `'Pending Revision Approval'`); this silently zeroes the count that
-  feeds `AppShell`/`Sidebar`'s pending-approvals nav badge. Found
-  during this audit, not yet fixed — see "Known gaps".
-- Port `send_departmental_alert` + the `notify_*` functions into
-  `backend/app/email.py` so Authorization Center's approve/reject
-  notifications (currently omitted, see "What's NOT done yet") can be
-  wired up instead of skipped.
+- **Configure the seven notifications' env vars with real addresses in
+  Render's Environment tab** (this repo/tooling has no access to
+  Render — this can only be done by whoever has dashboard access):
+  `APPROVAL_NOTIFY_EMAILS`, `APPROVAL_CC_EMAILS`,
+  `SCHEDULER_NOTIFY_EMAILS`, `WAREHOUSE_NOTIFY_EMAILS`,
+  `FINANCE_NOTIFY_EMAILS` (these six work today via fallback either
+  way, but whether Render currently has real values set or is still on
+  the fallbacks is unverified — see "What's NOT done yet"),
+  `DEPT_EMAILS_PRESS` + `DEPT_EMAILS_GARMENT` (send_departmental_alert
+  sends nothing at all until these are set — no fallback, by design),
+  and `APP_URL` (cosmetic — the departmental alert's link button).

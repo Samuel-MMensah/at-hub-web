@@ -1,10 +1,10 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
 import { RestrictedAccess } from "@/components/shell/restricted-access";
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, WAREHOUSE_ROLES, hasRole } from "@/lib/nav-config";
+import { NotifyFinanceButton } from "./notify-finance-button";
 
 interface WarehouseOrderRow {
   id: number;
@@ -69,18 +69,7 @@ export default async function WarehousePage() {
                 </div>
 
                 <div className="mt-4 flex justify-end">
-                  {alreadyNotified ? (
-                    <div className="w-full rounded-at border border-emerald-200 bg-at-success-bg px-4 py-2.5 text-sm font-semibold text-at-success-text">
-                      Finance already notified — awaiting dispatch finalization.
-                    </div>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      title="Notification sending depends on the backend service, which isn't implemented yet"
-                    >
-                      Notify Finance This Is Ready — coming soon
-                    </Button>
-                  )}
+                  <NotifyFinanceButton orderId={order.id} initiallyNotified={alreadyNotified} />
                 </div>
               </div>
             );

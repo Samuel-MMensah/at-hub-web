@@ -6,27 +6,23 @@ running server-side, unchanged from their proven Python implementation:
   1. PDF manifest generation   (reportlab — ports generate_pdf_manifest,
      generate_garment_pdf_manifest, dispatch_pdf_manifest from app.py).
      DONE — see app/pdf.py, wired below.
-  2. Departmental / lifecycle email alerts (resend — ports messaging.py's
-     send_departmental_alert and app.py's notify_* functions). Still a
-     stub.
+  2. Departmental / lifecycle email alerts (resend — ports app.py's
+     notify_* functions and messaging.py's send_departmental_alert into
+     app/email.py). All seven deferred notifications are DONE — see
+     app/email.py and the /email/* endpoints below.
   3. Production scheduling math (calculate_production_time,
      get_machine_next_available_time, working-day calendar logic).
-     Not started.
+     Not started (Production Layout Builder's scheduling.ts already
+     covers this on the frontend instead — see MIGRATION_STATUS.md).
 
 Everything else (data reads, RBAC, UI) lives in the Next.js app talking
 directly to Supabase. This service is intentionally small — a handful of
 endpoints, not a general API layer — so the migration surface stays
 auditable.
 
-Next steps to fill in (kept as stubs here on purpose, so nothing runs
-against production data until you've reviewed the port):
-  - Port messaging.py's send_departmental_alert + app.py's notify_*
-    functions into app/email.py, called from POST /email/*.
-  - Port calculate_production_time + calendar helpers into
-    app/scheduling.py, called from POST /scheduling/estimate.
-  - Every endpoint added here needs require_user() (app/auth.py) from
-    day one, not bolted on after the fact like POST /pdf/manifest was —
-    see MIGRATION_STATUS.md's rules section.
+Every endpoint here requires require_user() from day one — see
+MIGRATION_STATUS.md's rules section for why that's a hard rule, not a
+preference.
 """
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +30,14 @@ from pydantic import BaseModel
 
 from app.auth import require_user
 from app.config import ALLOWED_ORIGINS
-from app.email import handle_overdue_alert
+from app.email import (
+    handle_order_approved,
+    handle_order_rejected,
+    handle_order_submitted,
+    handle_overdue_alert,
+    handle_ready_for_finance,
+    handle_sent_to_warehouse,
+)
 from app.pdf import _is_garment, dispatch_pdf_manifest, sanitize_customer_name_for_filename
 from app.supabase_client import get_supabase
 
@@ -92,10 +95,60 @@ def generate_manifest(payload: ManifestRequest, user=Depends(require_user)):
     )
 
 
-@app.post("/email/departmental-alert")
-def departmental_alert():
-    # TODO: port from messaging.py's send_departmental_alert
-    raise NotImplementedError("Port send_departmental_alert from messaging.py here.")
+class OrderSubmittedRequest(BaseModel):
+    # Every id from ONE raise event (a whole batch, or a single
+    # resubmit's one row) — see handle_order_submitted's docstring for
+    # why this takes ids, not a client-supplied payload, and why
+    # order_ids[0] is significant (its row supplies every field except
+    # total_amount, which is summed across all of them).
+    order_ids: list[int]
+
+
+@app.post("/email/order-submitted")
+def order_submitted_alert(payload: OrderSubmittedRequest, user=Depends(require_user)):
+    return handle_order_submitted(payload.order_ids)
+
+
+class OrderApprovedRequest(BaseModel):
+    order_id: int
+
+
+@app.post("/email/order-approved")
+def order_approved_alert(payload: OrderApprovedRequest, user=Depends(require_user)):
+    """Fans out to notify_order_approved + notify_needs_scheduling +
+    send_departmental_alert as independent attempts — see
+    handle_order_approved's docstring for why."""
+    return handle_order_approved(payload.order_id)
+
+
+class OrderRejectedRequest(BaseModel):
+    order_id: int
+
+
+@app.post("/email/order-rejected")
+def order_rejected_alert(payload: OrderRejectedRequest, user=Depends(require_user)):
+    return handle_order_rejected(payload.order_id)
+
+
+class SentToWarehouseRequest(BaseModel):
+    order_id: int
+
+
+@app.post("/email/sent-to-warehouse")
+def sent_to_warehouse_alert(payload: SentToWarehouseRequest, user=Depends(require_user)):
+    return handle_sent_to_warehouse(payload.order_id)
+
+
+class ReadyForFinanceRequest(BaseModel):
+    order_id: int
+
+
+@app.post("/email/ready-for-finance")
+def ready_for_finance_alert(payload: ReadyForFinanceRequest, user=Depends(require_user)):
+    """Email only — the warehouse_notified_finance DB write already
+    happened in warehouse/actions.ts before this is ever called. See
+    handle_ready_for_finance's docstring."""
+    return handle_ready_for_finance(payload.order_id)
 
 
 class CollectionOverdueRequest(BaseModel):
