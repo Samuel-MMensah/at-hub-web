@@ -15,9 +15,12 @@ hosting/keys setup.
   user's own `job_orders`, plus related `jobs` rows for the pipeline
   banner), not mock data. See "Data layer (My Order Tracker)" below.
 - `/warehouse` — real, role-gated (`ADMIN_ROLES ∪ WAREHOUSE_ROLES`).
-  Read-only view of orders `At Warehouse`; its one action (Notify
-  Finance This Is Ready) is visible but disabled, backend-dependent —
-  see "What's NOT done yet".
+  Its one action, Notify Finance This Is Ready, is now real — built
+  from scratch (`warehouse/actions.ts` didn't exist before; the button
+  was permanently disabled). Writes `warehouse_notified_finance = true`
+  via an atomic guarded UPDATE, then attempts email #7
+  (`notify_ready_for_finance`) best-effort. See "Backend service —
+  deferred notifications".
 - `/dispatch` — real, role-gated (`ADMIN_ROLES ∪ FINANCE_ROLES`). Real
   writes: Record Payment (cumulative deposit total, not incremental),
   Finalize Dispatch (writes `status = 'Delivered'` +
@@ -25,9 +28,9 @@ hosting/keys setup.
 - `/production-board` — real, no role gate (matches `production.py`:
   any authenticated user, department filter locked for floor staff via
   `profiles.department`). Real writes: Start Production (writes
-  `production_start_date`), Send to Warehouse (its notification step
-  is deferred — best-effort/non-blocking in the original too, not a
-  regression).
+  `production_start_date`), Send to Warehouse (writes `status = 'At
+  Warehouse'` and now also fires email #6, `notify_sent_to_warehouse`,
+  best-effort — see "Backend service — deferred notifications").
 - `/audit-log` — real, admin-only (`ADMIN_ROLES`, matches the
   `is_admin` convention). Read-only: search, dynamically-built status
   filter, CSV export.
@@ -136,12 +139,12 @@ hosting/keys setup.
   to prevent double-actioning a row someone else already resolved.
   Verified against a live throwaway insert/approve/reject/delete cycle,
   not just typecheck/lint — see git history for the session this
-  landed in. Notifications (`notify_order_approved`,
-  `notify_needs_scheduling`, `send_departmental_alert`,
-  `notify_order_rejected`) are intentionally omitted, same precedent as
-  Production Board's `sendToWarehouse` — the backend email endpoints
-  are still `NotImplementedError` stubs, and the source itself treats
-  every one of these as best-effort/non-blocking.
+  landed in. Approve now fires emails #2/#3/#4 (`notify_order_approved`,
+  `notify_needs_scheduling`, `send_departmental_alert`) as three
+  INDEPENDENT best-effort attempts (a failure in one can't block the
+  others — a real bug in the source's own single try-block, not
+  reproduced here); Reject fires email #5 (`notify_order_rejected`).
+  See "Backend service — deferred notifications".
 - `/production-layout` (Production Layout Builder) — real, admin-only
   (`ADMIN_ROLES`, matches `is_admin`). Order selector limited to
   `status = 'Approved'` orders, form fields matching app.py's Job
@@ -245,9 +248,15 @@ hosting/keys setup.
     to the `job-attachments` Storage bucket (confirmed live to already
     exist, public) — an upload failure warns but never blocks
     submission, matching the source's own "order will still submit
-    without it" posture exactly. Notification is deferred/best-effort
-    like every other email-dependent action in this project (the
-    backend email endpoint still doesn't exist).
+    without it" posture exactly. Now also fires email #1
+    (`notify_new_order_submitted`) best-effort after a successful
+    insert — passes every inserted row's id, not a client-built
+    payload; the backend re-fetches and sums `total_amount` across the
+    whole batch itself, matching source's own `_notif['total_amount']
+    = sum(...)` exactly. See "Backend service — deferred
+    notifications". (Not wired into `resubmitOrder` — out of this
+    task's explicit scope; source does fire it there too, a real,
+    known gap, not an oversight.)
     - **`job_order_no` generation — verified live before writing any
       insert logic**: `job_orders.job_order_no` has a real Postgres
       `DEFAULT` — `'P' || lpad(floor(random()*1000000)::text, 6, '0')`
@@ -609,6 +618,105 @@ Exact logic lives in `backend/app/email.py` (`handle_overdue_alert`,
 endpoint, and `src/app/command-center/page.tsx`'s `triggerOverdueCollectionAlerts` —
 these files are the source of truth, not this doc.
 
+## Backend service — deferred notifications
+
+All seven of app.py's/messaging.py's deferred `notify_*` functions are
+now ported, wired into their real triggers, and live-tested. Endpoints
+are grouped by TRIGGER EVENT, not one-per-function (5 endpoints for 7
+functions — `approveOrder` fans out to 3 in one call) — matches how the
+frontend actually fires them: one Server Action per business event, not
+the frontend orchestrating multiple calls per action.
+
+| # | Function | Trigger | Endpoint |
+|---|---|---|---|
+| 1 | `notify_new_order_submitted` | Raise Job Order batch submit | `POST /email/order-submitted` |
+| 2 | `notify_order_approved` | Authorization Center approve | `POST /email/order-approved` (1 of 3) |
+| 3 | `notify_needs_scheduling` | Authorization Center approve | `POST /email/order-approved` (2 of 3) |
+| 4 | `send_departmental_alert` | Authorization Center approve | `POST /email/order-approved` (3 of 3) |
+| 5 | `notify_order_rejected` | Authorization Center reject | `POST /email/order-rejected` |
+| 6 | `notify_sent_to_warehouse` | Production Board send-to-warehouse | `POST /email/sent-to-warehouse` |
+| 7 | `notify_ready_for_finance` | Warehouse notify-finance | `POST /email/ready-for-finance` |
+
+- **Independent fan-out, not source's coupled one.** app.py:4888-4890
+  fires emails #2/#3/#4 inside a single `try` block — an exception in
+  the first silently skips the other two. `handle_order_approved`
+  (`backend/app/email.py`) wraps each in its own `try/except` and
+  reports each result separately (`order_approved_sent`,
+  `needs_scheduling_sent`, `departmental_alert_sent`) — a real bug
+  fixed, not reproduced.
+- **`send_departmental_alert` reuses `_email_shell`, not a second
+  `_alert_shell`.** `messaging.py`'s own template is nearly identical
+  in shape but duplicates the HTML (by that module's own
+  can't-import-from-app.py design). Since this port lives in the same
+  file as `_email_shell`, and `_email_shell` now carries a
+  load-bearing escaping contract, forking a second template would mean
+  maintaining that contract in two places. Two accepted consequences:
+  the "Open Appointed Time Hub" link (`APP_URL`) is folded into
+  `footer` instead of a dedicated slot; minor CSS values (19px vs 18px
+  heading, etc.) aren't preserved pixel-for-pixel.
+- **`_job_detail_rows` — verified identical to `messaging.py`'s own
+  copy before reusing, not duplicated.** Diffed line-by-line: only
+  difference was quote style and docstring wording, not behavior.
+- **`_department_recipients` has NO hardcoded fallback**, unlike every
+  other recipient helper here — an unconfigured `DEPT_EMAILS_PRESS` /
+  `DEPT_EMAILS_GARMENT` makes it log a warning and send nothing, by
+  design (matches source: "a silent send-to-nobody is worse than a
+  visible False").
+- **A real, shipped bug found and fixed via a later test-coverage
+  audit, not the original test pass**: `_email_shell`'s `rows` values
+  are unconditionally `html.escape()`'d — no opt-out. Two conditional
+  rows embedded a raw `<a href>` tag as a row *value*
+  (`notify_new_order_submitted`'s LPO link, `send_departmental_alert`'s
+  Sample Photo link) — both would have rendered as visible escaped
+  text, not clickable links. Neither was caught by the original live
+  tests because neither test's synthetic order happened to populate
+  that field. Fixed: both now use plain URL text (safe by construction,
+  most email clients auto-linkify a bare URL anyway). The same audit
+  found several other `_job_detail_rows` conditional fields
+  (`material_source`, the compound `paper_type`+`gsm` "Paper" row,
+  `binding_type`, `laminating_type`, `delivery_mode`,
+  `date_of_collection`, and GARMENT's `material_description`/
+  `packaging_mode`) had never been exercised with real values either —
+  lower risk (plain strings, not embedded markup) but genuinely
+  untested code paths; the verification scripts now populate every one
+  of these fields and assert on the rendered output.
+- **`warehouse/actions.ts` built from scratch**, not a re-wire — no
+  `actions.ts` existed for `/warehouse` before this; the "Notify
+  Finance This Is Ready" button was permanently disabled. Ported
+  `notify_ready_for_finance` split architecturally: the
+  `warehouse_notified_finance` DB write happens in the Server Action
+  (matching every other status write in this app — never in the
+  backend service), gated by an atomic
+  `UPDATE ... WHERE status='At Warehouse' AND
+  warehouse_notified_finance=false`; the email is only attempted if
+  that update actually affected a row, and its own success/failure
+  never affects the already-committed DB write (explicit best-effort
+  requirement — a failed email must never undo or block a status
+  write). Outcome matches source (flag flips on success, once);
+  mechanism doesn't (source combines both in one Python function).
+- **Live-tested, all seven** — `backend/scripts/
+  verify_deferred_notifications.py` (six) and `verify_departmental_alert.py`
+  (the seventh, both PRESS and GARMENT variants — the intro text
+  genuinely differs) — real synthetic orders, real sends via the live
+  `RESEND_API_KEY`, cleaned up after. Re-run in full after the
+  test-coverage audit above; all still pass.
+- **Configuration status — a Render-side gap, not a code gap.** Six of
+  the eight new env vars (`APPROVAL_NOTIFY_EMAILS`, `APPROVAL_CC_EMAILS`,
+  `SCHEDULER_NOTIFY_EMAILS`, `WAREHOUSE_NOTIFY_EMAILS`,
+  `FINANCE_NOTIFY_EMAILS`, and `APP_URL`) work today via hardcoded
+  fallback regardless of whether Render has real values set — which is
+  currently true is **unverifiable from this side**: nothing in this
+  codebase or its tooling has ever had access to Render's dashboard.
+  `DEPT_EMAILS_PRESS`/`DEPT_EMAILS_GARMENT` have no such fallback —
+  `send_departmental_alert` sends nothing at all until those two are
+  set for real. See "What's NOT done yet" and "Next up".
+
+Exact logic lives in `backend/app/email.py` (all seven `notify_*`
+functions, their recipient helpers, `SALES_REP_EMAILS`,
+`_job_detail_rows`, the five `handle_*` functions) and `backend/app/
+main.py`'s five `/email/*` endpoints — these files are the source of
+truth, not this doc.
+
 ## Shared infrastructure
 
 - `isGarment()` (ports `_is_garment()` from app.py) lives in
@@ -657,8 +765,9 @@ these files are the source of truth, not this doc.
   deliberately deferred (see "Routes migrated"); every write-path phase
   (1-5, including Modify & Resubmit) is done.
 - **All seven deferred notifications are code-complete and live-tested
-  (see `backend/app/email.py`), but NOT fully operational in
-  production yet — this is a configuration gap, not a code gap.**
+  (see "Backend service — deferred notifications"), but NOT fully
+  operational in production yet — this is a configuration gap, not a
+  code gap.**
   - Six (`_approval_recipients`, `_approval_cc_recipients`,
     `_scheduler_recipients`, `_warehouse_recipients`,
     `_finance_recipients`) fall back to real hardcoded addresses if

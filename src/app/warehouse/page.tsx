@@ -1,12 +1,14 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
 import { RestrictedAccess } from "@/components/shell/restricted-access";
+import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, WAREHOUSE_ROLES, hasRole } from "@/lib/nav-config";
+import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { NotifyFinanceButton } from "./notify-finance-button";
 
-interface WarehouseOrderRow {
+interface WarehouseOrderRow extends GarmentClassifiable {
   id: number;
   job_order_no: string | null;
   customer_name: string;
@@ -19,7 +21,9 @@ async function getWarehouseOrders() {
 
   const { data } = await supabase
     .from("job_orders")
-    .select("id, job_order_no, customer_name, qty_to_print, warehouse_notified_finance")
+    .select(
+      "id, job_order_no, customer_name, qty_to_print, warehouse_notified_finance, department, type_of_print, print_type"
+    )
     .eq("status", "At Warehouse")
     .order("created_at", { ascending: true });
 
@@ -52,6 +56,7 @@ export default async function WarehousePage() {
           {orders.map((order) => {
             const orderNo = order.job_order_no || "—";
             const alreadyNotified = Boolean(order.warehouse_notified_finance);
+            const garment = isGarment(order);
 
             return (
               <div
@@ -68,8 +73,17 @@ export default async function WarehousePage() {
                   Quantity: {order.qty_to_print ?? "—"}
                 </div>
 
-                <div className="mt-4 flex justify-end">
+                {/* Compact pair of right-aligned actions, natural Button
+                    size — matches Dispatch's card action-row convention
+                    (default `md` Button, not fullWidth) and Production
+                    Board's exact pairing of a status-action button with
+                    PdfPreviewButton in the same flex row. */}
+                <div className="mt-4 flex items-center justify-end gap-3">
                   <NotifyFinanceButton orderId={order.id} initiallyNotified={alreadyNotified} />
+                  <PdfPreviewButton
+                    orderId={order.id}
+                    label={garment ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+                  />
                 </div>
               </div>
             );

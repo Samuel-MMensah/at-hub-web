@@ -16,6 +16,7 @@ export function NotifyFinanceButton({
   const [notified, setNotified] = useState(initiallyNotified);
 
   function handleClick() {
+    setError(null);
     startTransition(async () => {
       const result = await notifyReadyForFinance(orderId);
       if (result.error) {
@@ -28,18 +29,18 @@ export function NotifyFinanceButton({
 
   if (notified) {
     return (
-      <div className="w-full rounded-at border border-emerald-200 bg-at-success-bg px-4 py-2.5 text-sm font-semibold text-at-success-text">
-        Finance already notified — awaiting dispatch finalization.
-      </div>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-at-success-bg px-3 py-1.5 text-xs font-semibold text-at-success-text">
+        ✓ Finance Notified
+      </span>
     );
   }
 
   return (
-    <div className="w-full">
-      <Button disabled={isPending} onClick={handleClick} className="w-full">
+    <div className="flex flex-col items-end gap-1">
+      <Button disabled={isPending} onClick={handleClick}>
         {isPending ? "Notifying…" : "Notify Finance This Is Ready"}
       </Button>
-      {error && <div className="mt-2 text-sm font-semibold text-red-600">{error}</div>}
+      {error && <div className="text-xs font-semibold text-red-600">{error}</div>}
     </div>
   );
 }

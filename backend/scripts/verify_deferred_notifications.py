@@ -25,6 +25,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.email import (
+    _email_shell,
+    _job_detail_rows,
     handle_order_approved,
     handle_order_rejected,
     handle_order_submitted,
@@ -39,6 +41,13 @@ results: dict[str, dict] = {}
 
 
 def insert(supabase, **fields):
+    # Populates every optional _job_detail_rows field a PRESS order can
+    # have (material_source, paper_type+gsm, binding_type,
+    # laminating_type, delivery_mode, date_of_collection) -- a test-
+    # coverage audit found these conditional rows had NEVER been
+    # exercised with a real value in any prior test run, same class of
+    # gap as the LPO-link bug (never caught because the field was never
+    # populated). Individual tests can still override/omit via kwargs.
     base = {
         "customer_name": "TEST - DO NOT SHIP (deferred-notif-verify)",
         "status": "Pending Approval",
@@ -50,6 +59,13 @@ def insert(supabase, **fields):
         "telephone_number": "0000000000",
         "created_by": "delivered@resend.dev",
         "job_description": "Deferred notification verification",
+        "material_source": "Company Stock",
+        "paper_type": "Art Card",
+        "gsm": 300,
+        "binding_type": "Perfect Binding",
+        "laminating_type": "Gloss Laminating",
+        "delivery_mode": "Client Pickup",
+        "date_of_collection": "2026-08-15",
     }
     base.update(fields)
     res = supabase.table("job_orders").insert(base).execute()
@@ -68,18 +84,33 @@ def test_order_submitted(supabase):
     ids = []
     try:
         item1 = insert(supabase, total_amount=250, sales_rep="Mabel Ampofo",
-                        job_description="Batch item 1 - business cards")
+                        job_description="Batch item 1 - business cards",
+                        lpo_file_url="https://example-test.internal/lpo/test-po-12345.pdf")
         item2 = insert(supabase, total_amount=175, sales_rep="Mabel Ampofo",
                         job_description="Batch item 2 - flyers",
                         parent_group_id=item1["parent_group_id"] or "PG-VERIFY-TEST")
         ids = [item1["id"], item2["id"]]
-        print(f"Seeded batch: id={item1['id']} (total=250) + id={item2['id']} (total=175), sales_rep=Mabel Ampofo")
+        print(f"Seeded batch: id={item1['id']} (total=250, lpo_file_url set) + "
+              f"id={item2['id']} (total=175), sales_rep=Mabel Ampofo")
 
         result = handle_order_submitted(ids)
         print("Result:", result)
         assert result.get("sent") is True, f"expected sent=True, got {result}"
         print("PASS -- sent=True. Expect total_amount=425 (250+175, summed) in the email, "
               "recipients = _approval_recipients() + mabel.ampofo@appointedtime.com.gh (sales rep CC).")
+
+        # LPO row was previously never tested with lpo_file_url actually
+        # populated (that's exactly how the earlier <a>-tag escaping bug
+        # shipped unnoticed). Reconstruct deterministically to confirm
+        # the fix: plain URL text, safely escaped, not broken markup.
+        html_out = _email_shell(
+            accent_bg="#0f172a", heading="x", subheading="x", intro="x",
+            rows=[("LPO:", item1["lpo_file_url"], None)], footer="x",
+        )
+        assert "https://example-test.internal/lpo/test-po-12345.pdf" in html_out
+        assert "<a href" not in html_out
+        print("PASS -- LPO row renders as plain, safely-escaped URL text, no broken/escaped markup.")
+
         results["1_order_submitted"] = {"ok": True, "detail": result}
     except Exception as e:
         print("FAIL:", e)
@@ -91,7 +122,8 @@ def test_order_submitted(supabase):
 
 def test_order_approved(supabase):
     print("\n" + "=" * 70)
-    print("TEST 2-3/6: notify_order_approved + notify_needs_scheduling (approveOrder)")
+    print("TEST 2-4/6: notify_order_approved + notify_needs_scheduling + "
+          "send_departmental_alert (approveOrder)")
     print("=" * 70)
     ids = []
     try:
@@ -111,15 +143,42 @@ def test_order_approved(supabase):
         print("Result:", result)
         assert result.get("order_approved_sent") is True, f"expected order_approved_sent=True, got {result}"
         assert result.get("needs_scheduling_sent") is True, f"expected needs_scheduling_sent=True, got {result}"
-        assert result.get("departmental_alert") == "not_implemented"
-        print("PASS -- both independent attempts succeeded. "
+        # departmental_alert_sent is expected False here, not a failure --
+        # DEPT_EMAILS_PRESS isn't set in this local .env (by design, no
+        # fallback). See scripts/verify_departmental_alert.py for the
+        # real send-path test with it temporarily configured.
+        print(f"departmental_alert_sent={result.get('departmental_alert_sent')} "
+              "(expected False here -- DEPT_EMAILS_PRESS unset locally by design, "
+              "not a failure; see verify_departmental_alert.py for the real send test).")
+        assert result.get("departmental_alert_sent") is False
+        print("PASS -- both configured attempts succeeded independently. "
               "notify_order_approved -> delivered@resend.dev (fake) + Finance/Warehouse CC + "
               "d.sarpong@appointedtime.com.gh (sales rep). "
               "notify_needs_scheduling -> s.mensah@appointedtime.com.gh (scheduler).")
-        results["2_3_order_approved"] = {"ok": True, "detail": result}
+
+        # Full _job_detail_rows content check -- material_source, Paper
+        # (compound paper_type+gsm row), binding_type, laminating_type,
+        # delivery_mode, date_of_collection were NEVER exercised with
+        # real values before this audit. Confirm every one renders.
+        rows = _job_detail_rows(order)
+        row_labels = {label for label, _ in rows}
+        print("_job_detail_rows labels produced:", sorted(row_labels))
+        expected_labels = {
+            "Job Description", "Quantity", "Print Category", "Material Source",
+            "Paper", "Binding", "Laminating", "Delivery Mode", "Collection Date",
+        }
+        missing = expected_labels - row_labels
+        assert not missing, f"expected labels missing from _job_detail_rows output: {missing}"
+        paper_row = dict(rows)["Paper"]
+        print("Paper row value:", repr(paper_row))
+        assert paper_row == "Art Card (300gsm)", f"unexpected Paper row rendering: {paper_row!r}"
+        print("PASS -- every PRESS-branch conditional row rendered, including the compound "
+              "Paper row (paper_type + gsm combined correctly).")
+
+        results["2_3_4_order_approved"] = {"ok": True, "detail": result}
     except Exception as e:
         print("FAIL:", e)
-        results["2_3_order_approved"] = {"ok": False, "detail": str(e)}
+        results["2_3_4_order_approved"] = {"ok": False, "detail": str(e)}
     finally:
         cleanup(supabase, ids)
         print(f"Cleaned up {len(ids)} test row(s).")

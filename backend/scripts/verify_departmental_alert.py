@@ -29,7 +29,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 
 def insert(supabase, department: str):
-    return supabase.table("job_orders").insert({
+    # Populates department-specific optional _job_detail_rows fields
+    # (previously never exercised with real values, same class of gap
+    # as the LPO/Sample Photo link bugs) plus sample_file_url, to
+    # confirm the Sample Photo row renders as safe plain text too.
+    fields = {
         "customer_name": f"TEST - DO NOT SHIP (dept-alert-verify-{department.lower()})",
         "status": "Approved",
         "total_amount": 750,
@@ -41,7 +45,25 @@ def insert(supabase, department: str):
         "created_by": "delivered@resend.dev",
         "job_description": f"Departmental alert verification - {department}",
         "sales_rep": None,
-    }).execute().data[0]
+        "delivery_mode": "Client Pickup" if department == "PRESS" else "Customer Pick-up",
+        "date_of_collection": "2026-08-20",
+        "sample_file_url": f"https://example-test.internal/samples/{department.lower()}-sample.jpg",
+    }
+    if department == "GARMENT":
+        fields.update({
+            "material_source": "Customer Supplied",
+            "material_description": "100% cotton, navy blue",
+            "packaging_mode": "Box Packaging",
+        })
+    else:
+        fields.update({
+            "material_source": "Company Stock",
+            "paper_type": "Matte Card",
+            "gsm": 250,
+            "binding_type": "Spiral Binding",
+            "laminating_type": "Matt Laminating",
+        })
+    return supabase.table("job_orders").insert(fields).execute().data[0]
 
 
 def reconstruct_intro(department: str) -> str:
@@ -83,6 +105,25 @@ def main():
             print(f"PASS -- departmental_alert_sent=True for {department} "
                   f"(recipients pulled from DEPT_EMAILS_{department}, confirmed via .env).")
 
+            # Confirm every department-specific conditional row actually
+            # rendered -- these were never exercised with real values in
+            # any prior test.
+            detail_rows = _job_detail_rows(order)
+            detail_labels = {label for label, _ in detail_rows}
+            print(f"_job_detail_rows labels for {department}:", sorted(detail_labels))
+            if department == "GARMENT":
+                expected = {"Job Description", "Quantity", "Print Type", "Material Source",
+                            "Material", "Packaging", "Delivery Mode", "Collection Date"}
+            else:
+                expected = {"Job Description", "Quantity", "Print Category", "Material Source",
+                            "Paper", "Binding", "Laminating", "Delivery Mode", "Collection Date"}
+            missing = expected - detail_labels
+            assert not missing, f"{department}: expected labels missing: {missing}"
+            print(f"PASS -- every {department}-branch conditional row rendered.")
+
+            sample_row_value = order["sample_file_url"]
+            assert sample_row_value, "test fixture should have set sample_file_url"
+
             # Reconstruct the exact HTML deterministically (same known
             # ticket fields) to confirm the department-specific intro
             # text is the one that actually would have gone out.
@@ -93,8 +134,9 @@ def main():
                 ("Status", order["status"], None),
                 ("Contract Value", f"GH₵ {float(order['total_amount']):,.2f}", None),
             ]
-            for label, value in _job_detail_rows(order):
+            for label, value in detail_rows:
                 rows.append((label, value, None))
+            rows.append(("Sample Photo", sample_row_value, None))
             html_out = _email_shell(
                 accent_bg="#0f172a",
                 heading=f"{department} DEPARTMENT ALERT",
@@ -112,6 +154,9 @@ def main():
             )
             print(f"Wrote reconstructed HTML to {out_path}")
             assert "<strong>" in html_out, "expected the emphasized instruction to render as real markup"
+            assert sample_row_value in html_out, "Sample Photo URL should appear as plain text"
+            assert "<a href" not in html_out, "Sample Photo row should NOT contain a raw anchor tag"
+            print("PASS -- Sample Photo row renders as plain, safely-escaped URL text, no broken markup.")
 
         print("\n" + "=" * 70)
         print("Confirming PRESS and GARMENT intros are genuinely different text")
