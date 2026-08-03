@@ -8,6 +8,11 @@ hosting/keys setup.
 ## Routes migrated
 
 - `/login` — real Supabase Auth (email/password), not a mock.
+- `/reset-password` — new, didn't exist before this migration touched
+  it. Completes a Supabase recovery-link flow client-side (session
+  established via `?code=` exchange, then `updateUser({password})`).
+  See "Guest accounts / staff onboarding" below for why it was needed
+  and how it works.
 - `/command-center` — real Supabase queries for every KPI, not mock data.
   Also fires the overdue-collection-alert side effect on every load —
   see "Backend service — overdue collection alert" below. Includes a
@@ -766,6 +771,139 @@ Exact logic lives in `backend/app/email.py` (all seven `notify_*`
 functions, their recipient helpers, `SALES_REP_EMAILS`,
 `_job_detail_rows`, the five `handle_*` functions) and `backend/app/
 main.py`'s five `/email/*` endpoints — these files are the source of
+truth, not this doc.
+
+## Guest accounts / staff onboarding
+
+New, one-time operational work, not a route port — 5 real, permanent
+Guest-role Supabase Auth accounts for sales-rep staff, onboarded via a
+one-time invite link rather than a shared/typed password. What this
+task actually shipped ended up going well beyond the original ask:
+proving the onboarding flow surfaced two real infrastructure gaps
+(below) that had to be fixed before any real account could be created
+safely.
+
+- **The 5 accounts** — all `role: "Guest"`, `department: "NONE"`:
+
+  | Name | Email |
+  |---|---|
+  | Charles Adoo | charles.adoo@appointedtime.com.gh |
+  | Daphne Sarpong | d.sarpong@appointedtime.com.gh |
+  | Elizabeth Addo Obeng | ea.obeng@appointedtime.com.gh |
+  | Reginald Aidam | reginald.aidam@appointedtime.com.gh |
+  | Mabel Ampofo | mabel.ampofo@appointedtime.com.gh |
+
+  These are the app's existing sales reps (`SALES_REP_EMAILS`,
+  `backend/app/email.py` — confirmed name+email against that list
+  before creating anything, not retyped independently). The access
+  granted is deliberate, not generic placeholder login: Guest naturally
+  gets exactly Command Center, Production Board, Shop Floor Control,
+  and Audit Log (the only four routes with no role gate — confirmed
+  against `nav-config.ts` first; every other route already requires a
+  role Guest doesn't have), so each rep can see the revenue and job
+  performance tied to the business they personally bring in — Command
+  Center's KPIs and its Departmental Performance Revenue/Jobs/
+  Collections donuts specifically — not admin-level access to anything
+  else. No RLS or code change was needed for this; the existing
+  no-role-gate routes already produced exactly this access surface.
+
+- **`/reset-password` — discovered missing, built from scratch.** Before
+  this task, nothing in this app (grepped: zero matches for
+  `updateUser`/`reset-password`/`update-password`/`recovery` anywhere
+  in `src/`) could complete a Supabase recovery-link landing — the
+  welcome email's "Set Your Password" button would have been a dead
+  end. Built client-side, matching Supabase's own documented pattern
+  for this flow rather than a Server Action: `src/lib/supabase/client.ts`
+  passes no auth options to `createBrowserClient`, so `@supabase/ssr`'s
+  real defaults apply — confirmed directly against the installed
+  package's source (`node_modules/@supabase/ssr/dist/main/
+  createBrowserClient.js`), not assumed: `flowType: "pkce"` and
+  `detectSessionInUrl: true` in a browser context. Simply mounting the
+  page auto-exchanges the `?code=` param Supabase's `/auth/v1/verify`
+  redirect appends, persisting the session into the same cookie storage
+  `src/lib/supabase/server.ts` reads — no separate sync step for
+  `proxy.ts` or any server-rendered page to see the user as signed in
+  afterward. Listens for the `PASSWORD_RECOVERY` auth event (Supabase's
+  documented signal for this exact case), with a `getSession()` fallback
+  for the race where that event fires before the listener attaches, and
+  a 5s timeout to an explicit "invalid or expired" state rather than a
+  form that waits forever. On success: `supabase.auth.updateUser({password})`,
+  then redirects to `/login`. `proxy.ts` needed one exclusion
+  (`RESET_PASSWORD_PATH`, alongside the existing `LOGIN_PATH` check) —
+  the very first request here has no session yet (the exchange is
+  client-side), so without the exclusion the existing auth gate would
+  redirect to `/login` and strip the `?code=` param before this page's
+  JS ever ran.
+
+- **Two real Supabase Dashboard settings changed — config, not code.**
+  Authentication → URL Configuration's Site URL and Redirect URLs were
+  both still `http://localhost:3000` — a live dev leftover, confirmed
+  directly by this task's own dry run (the first attempt explicitly
+  passed `options.redirect_to` pointing at production and Supabase
+  silently substituted `localhost:3000` anyway, no error). Both changed
+  to the real production domain (`https://hub.appointedtimeprinting.com`)
+  with `/reset-password` added to the redirect allow-list; re-running the
+  same dry run afterward confirmed the generated link's `redirect_to`
+  now genuinely resolves to production. **This is Dashboard-only
+  configuration — the same class of gap as Render's env vars (see
+  "What's NOT done yet"): no method on the Auth Admin API can touch it**
+  (checked directly against `gotrue`'s `SyncGoTrueAdminAPI` — only
+  `create_user`/`delete_user`/`generate_link`/`get_user_by_id`/
+  `invite_user_by_email`/`list_users`/`sign_out`/`update_user_by_id`
+  exist; nothing for project-level auth config), and this session never
+  had a Supabase Management API token either. **Worth a standing
+  callout**: any future auth-email flow this app adds (a different
+  redirect target, magic-link login, etc.) should check this same
+  Dashboard section FIRST — the failure mode here isn't an error, it's
+  a silent substitution back to whatever Site URL is currently set, so
+  it reads exactly like a code bug until you know where to look.
+
+- **`backend/scripts/create_guest_accounts.py` — reusable
+  infrastructure, not a one-off throwaway.** Its core function,
+  `provision_guest_account(full_name, email)`, is the one real code
+  path both `--dry-run` and `--real` call — the dry run proved exactly
+  this function, not a simplified stand-in for it. Reusable for a
+  future onboarding batch of the same shape, but **not yet generic**:
+  the 5-person list (`GUEST_ACCOUNTS`) is hardcoded in the script, and
+  `role: "Guest"` / `department: "NONE"` are hardcoded inside
+  `provision_guest_account` itself, not parameters — a future reuse for
+  a different batch, or a different role, needs both generalized (a
+  CSV/list input for the people, a role/department parameter for the
+  function) rather than edited in place.
+
+- **`send_account_welcome()` — an eighth email function, joining the
+  system built in "Backend service — deferred notifications" above,**
+  not a separate one-off. Reuses `_email_shell()` (same escaping
+  contract as the other seven). No dedicated button/link slot exists on
+  the shell to reuse — checked first: `send_departmental_alert`'s own
+  "Open Appointed Time Hub" button isn't a shell parameter either, it's
+  built ad hoc by that caller and folded into its own `footer` argument
+  (`_email_shell` has no `link_html` slot at all) — so this function
+  follows that same precedent rather than adding a new shell parameter
+  for what would still be its only caller. `reset_link` is a
+  server-generated, one-time Supabase token (never user-typed) but is
+  still run through `html.escape()` regardless, matching how
+  `send_departmental_alert` treats `APP_URL` — defensive consistency,
+  not because the value is actually attacker-controlled.
+
+- **Verification discipline**: the full flow (`--dry-run`, using
+  `delivered@resend.dev` — Resend's own documented always-succeeds test
+  address, so the send path is genuinely exercised without depending on
+  a real mailbox) was run **twice** — once before the Dashboard fix
+  (confirming the exact `localhost` substitution bug live, not just
+  suspecting it), once after (confirming the real fix) — before any of
+  the 5 real, permanent accounts were touched. Each dry run: real Auth
+  user created, `profiles` row confirmed correct, a genuine Resend
+  message id returned, the recovery link's structure and `redirect_to`
+  inspected directly, then the test account deleted and its absence
+  re-confirmed via a fresh query. All 5 real accounts were provisioned
+  only after the second dry run passed clean, with no cleanup after (as
+  intended — these are permanent) and every welcome email confirmed
+  accepted by Resend with a real message id.
+
+Exact logic lives in `backend/app/email.py`'s `send_account_welcome`,
+`backend/scripts/create_guest_accounts.py`, and
+`src/app/reset-password/page.tsx` — these files are the source of
 truth, not this doc.
 
 ## Materials Inventory Management
