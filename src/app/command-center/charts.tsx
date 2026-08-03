@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 
 const CURRENCY = "GH₵";
 
@@ -51,10 +52,14 @@ function ChartTooltip({
   active,
   label,
   payload,
+  valueFormatter = (v: number) => money(v, 2),
 }: {
   active?: boolean;
   label?: string;
   payload?: { name: string; value: number; color: string }[];
+  /** Defaults to money(v, 2) — the "Jobs" donut passes a plain integer
+   * formatter instead, since a job count isn't currency. */
+  valueFormatter?: (v: number) => string;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   return (
@@ -67,7 +72,7 @@ function ChartTooltip({
             style={{ backgroundColor: entry.color }}
           />
           <span className="text-at-slate">{entry.name}:</span>
-          <span className="font-bold text-at-navy">{money(entry.value, 2)}</span>
+          <span className="font-bold text-at-navy">{valueFormatter(entry.value)}</span>
         </div>
       ))}
     </div>
@@ -405,6 +410,204 @@ export function OrderIntakeChart({ orders }: { orders: IntakeOrderRow[] }) {
             />
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* ── Departmental Performance ──────────────────────────────────────── */
+
+export interface DeptPerformanceRow extends GarmentClassifiable {
+  job_order_no: string | null;
+  total_amount: number | null;
+  deposit_amount: number | null;
+}
+
+// Same two colors already established on Command Center's own KPI
+// cards (Press/Garment Orders) — deliberately not a new pair.
+const DEPT_COLORS = { Press: "#0369a1", Garment: "#d97706" } as const;
+
+function nuniqueLocal(values: (string | null)[]): number {
+  const set = new Set<string>();
+  for (const v of values) {
+    if (v) set.add(v);
+  }
+  return set.size;
+}
+
+interface DeptStats {
+  label: "Press" | "Garment";
+  revenue: number;
+  jobs: number;
+  collections: number;
+  outstanding: number;
+  color: string;
+}
+
+// isGarment() (src/lib/is-garment.ts) is the ONLY classification logic
+// used here — not reimplemented. Revenue/Collections are raw sums;
+// Outstanding is computed (Revenue - Collections), never queried —
+// deposit_amount is already the cumulative collected-to-date figure
+// (kept current by every Record Payment action across Dispatch and
+// Archive), not just an initial deposit, so no new tracking is needed.
+function groupDepartmentPerformance(rows: DeptPerformanceRow[]): DeptStats[] {
+  const press = rows.filter((r) => !isGarment(r));
+  const garment = rows.filter(isGarment);
+
+  const build = (label: "Press" | "Garment", group: DeptPerformanceRow[]): DeptStats => {
+    const revenue = group.reduce((sum, r) => sum + Number(r.total_amount ?? 0), 0);
+    const collections = group.reduce((sum, r) => sum + Number(r.deposit_amount ?? 0), 0);
+    return {
+      label,
+      revenue,
+      jobs: nuniqueLocal(group.map((r) => r.job_order_no)),
+      collections,
+      outstanding: revenue - collections,
+      color: DEPT_COLORS[label],
+    };
+  };
+
+  return [build("Press", press), build("Garment", garment)];
+}
+
+// Same donut technique as CapacityCharts' "Revenue by Job" pie above —
+// innerRadius/outerRadius/paddingAngle/Cell/Legend all identical.
+// Deliberately different from that one: the label shows the exact
+// formatted value AND the percentage (not percentage alone) — this
+// section is for a management presentation, not a compact dashboard
+// tile, so precision on the slice itself matters.
+function DepartmentDonut({
+  title,
+  data,
+  formatValue,
+}: {
+  title: string;
+  data: { name: string; value: number; color: string }[];
+  formatValue: (v: number) => string;
+}) {
+  return (
+    <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
+      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-at-slate">{title}</div>
+      <ResponsiveContainer width="100%" height={260}>
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            innerRadius="52%"
+            outerRadius="78%"
+            paddingAngle={2}
+            label={({ value, percent }: { value?: number; percent?: number }) =>
+              value != null && percent != null
+                ? `${formatValue(value)} (${(percent * 100).toFixed(0)}%)`
+                : ""
+            }
+            labelLine={false}
+          >
+            {data.map((entry) => (
+              <Cell key={entry.name} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+            ))}
+          </Pie>
+          <Tooltip content={<ChartTooltip valueFormatter={formatValue} />} />
+          <Legend
+            verticalAlign="bottom"
+            iconType="circle"
+            iconSize={8}
+            wrapperStyle={{ fontSize: 11, color: "#64748b" }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Deliberately a BROADER status scope than every other Command Center
+// chart on this page (which all read the `orders`/`jobs from getKpis()'s
+// ACTIVE_ORDER_STATUSES-filtered fetch) — this section reads its own
+// separately-fetched rows, scoped to the same 5-status set Archive
+// uses (Approved/In Production/At Warehouse/Ready for Collection/
+// Delivered), because it represents total historical actuals for
+// reporting, not "current active work." See the caption rendered
+// below the table, and page.tsx's query comment, for why this is
+// intentional, not a bug.
+export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceRow[] }) {
+  const stats = useMemo(() => groupDepartmentPerformance(rows), [rows]);
+
+  if (rows.length === 0) return null;
+
+  const revenueData = stats.map((s) => ({ name: s.label, value: s.revenue, color: s.color }));
+  const jobsData = stats.map((s) => ({ name: s.label, value: s.jobs, color: s.color }));
+  const collectionsData = stats.map((s) => ({ name: s.label, value: s.collections, color: s.color }));
+
+  return (
+    <div>
+      <SectionHeader>Departmental Performance</SectionHeader>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <DepartmentDonut title="Revenue" data={revenueData} formatValue={(v) => money(v, 2)} />
+        <DepartmentDonut title="Jobs" data={jobsData} formatValue={(v) => v.toLocaleString()} />
+        <DepartmentDonut
+          title="Collections"
+          data={collectionsData}
+          formatValue={(v) => money(v, 2)}
+        />
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-at-border bg-at-bg">
+              <th className="px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                Department
+              </th>
+              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                Revenue
+              </th>
+              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                Jobs
+              </th>
+              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                Collections
+              </th>
+              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                Outstanding
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => (
+              <tr key={s.label} className="border-b border-at-border last:border-0">
+                <td className="whitespace-nowrap px-4 py-2.5 font-bold text-at-navy">
+                  <span
+                    className="mr-2 inline-block h-2 w-2 rounded-full"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  {s.label}
+                </td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
+                  {money(s.revenue, 2)}
+                </td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
+                  {s.jobs.toLocaleString()}
+                </td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
+                  {money(s.collections, 2)}
+                </td>
+                <td
+                  className="whitespace-nowrap px-4 py-2.5 text-right font-semibold"
+                  style={{ color: s.outstanding > 0 ? "#ef4444" : "#10b981" }}
+                >
+                  {money(s.outstanding, 2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-2 text-xs text-at-slate">
+        Includes all approved-and-beyond orders, including completed/delivered ones — figures
+        will differ from the Active Orders totals above, which exclude completed orders.
       </div>
     </div>
   );

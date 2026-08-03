@@ -10,7 +10,11 @@ hosting/keys setup.
 - `/login` — real Supabase Auth (email/password), not a mock.
 - `/command-center` — real Supabase queries for every KPI, not mock data.
   Also fires the overdue-collection-alert side effect on every load —
-  see "Backend service — overdue collection alert" below.
+  see "Backend service — overdue collection alert" below. Includes a
+  Departmental Performance section (three donuts + a stat table, Press
+  vs Garment) using a deliberately broader status scope than the rest
+  of the page — see "Data layer (Command Center)" below. No role gate,
+  same as every other Command Center KPI.
 - `/my-orders` (My Order Tracker) — real Supabase data (the signed-in
   user's own `job_orders`, plus related `jobs` rows for the pipeline
   banner), not mock data. See "Data layer (My Order Tracker)" below.
@@ -390,14 +394,54 @@ is read by Shop Floor Control's Production Pipeline visualization —
   outstandingBalance (computed as contractValue − depositCollected),
   and the press/garment split (ports `_is_garment()` from app.py — see
   "Shared infrastructure" below for where that now lives).
-- `job_orders` filtered to `status = 'Pending'` → pendingApprovals,
-  feeding `AppShell`'s sidebar badge.
+- `job_orders` filtered to `status in ('Pending Approval', 'Pending
+  Revision Approval')` → pendingApprovals, feeding `AppShell`'s sidebar
+  badge. (This doc bullet previously said `status = 'Pending'`, stale
+  since the real pendingApprovals bug fix — see "Known gaps" — the code
+  itself has used `PENDING_STATUSES` correctly since then; only this
+  sentence was out of date.)
 - `jobs` filtered to `finish_time >= now-72h OR finish_time IS NULL` →
   bookRunsQueue (`ups = 1`) and packagingSkillets (`ups > 1`), both
   counted as distinct `tracking_id`.
+- **Departmental Performance section** — a SEPARATE query, deliberately
+  NOT reusing the `activeOrders` fetch above: `job_orders` filtered to
+  the same 5-status set Archive uses (`Approved`, `In Production`, `At
+  Warehouse`, `Ready for Collection`, `Delivered` — replicated from
+  `src/app/archive/page.tsx`'s `ARCHIVE_STATUSES`, which isn't exported,
+  so not literally shared, just identical). This is intentionally
+  broader than the 3-status KPI cards above — it represents total
+  historical actuals for reporting (including completed/delivered
+  orders), not "current active work." Per department (via `isGarment()`,
+  not reimplemented): Revenue (`sum(total_amount)`), Jobs
+  (`count(distinct job_order_no)`), Collections (`sum(deposit_amount)`
+  — already the cumulative collected-to-date figure, kept current by
+  every Record Payment action across Dispatch/Archive, not just an
+  initial deposit), Outstanding (computed as Revenue − Collections, not
+  queried). Rendered as three donuts (Revenue/Jobs/Collections, Press
+  vs Garment, same `#0369a1`/`#d97706` colors as the KPI cards) plus a
+  stat table, reusing `CapacityCharts`' existing donut technique
+  (`charts.tsx`) rather than a new one. **No role gate** — same open
+  access as the rest of Command Center, not admin-restricted.
+  - **Verified live before and after building**: the 5-status query's
+    total revenue (GH₵787,682.00 across 33 rows: 11 Press + 22 Garment)
+    is a strict superset of the 3-status KPI's Total Contract Value
+    (GH₵776,710.00, 21 rows) — the ~GH₵11k difference is fully
+    explained by 12 additional `Delivered` rows (0 `Ready for
+    Collection` rows exist in live data currently), not a bug. Per-
+    department figures (Press: revenue GH₵727,470.00, collections
+    GH₵4,950.00, outstanding GH₵722,520.00, 11 jobs; Garment: revenue
+    GH₵60,212.00, collections GH₵39,260.00, outstanding GH₵20,952.00,
+    22 jobs) independently recomputed outside the component and
+    confirmed to match exactly.
+  - A caption is rendered directly under the section on the page
+    itself (not just documented here) explaining the scope difference
+    from the Active Orders totals above — the same class of confusion
+    this project hit once already between Audit Log and Command
+    Center, addressed proactively this time rather than after the fact.
 
-Exact logic lives in `src/app/command-center/page.tsx` — this file is
-the source of truth, not this doc.
+Exact logic lives in `src/app/command-center/page.tsx` and
+`src/app/command-center/charts.tsx` (`DepartmentalPerformanceCharts`)
+— these files are the source of truth, not this doc.
 
 ## Data layer (My Order Tracker)
 

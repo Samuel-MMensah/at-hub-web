@@ -8,8 +8,10 @@ import {
   TrendCharts,
   CapacityCharts,
   OrderIntakeChart,
+  DepartmentalPerformanceCharts,
   type TrendOrderRow,
   type CapacityJobRow,
+  type DeptPerformanceRow,
 } from "./charts";
 
 const CURRENCY = "GH₵";
@@ -18,6 +20,24 @@ const CURRENCY = "GH₵";
 // Excludes 'Pending' (not yet approved) and 'Delivered'/'Ready for
 // Collection' (those belong to get_archive_orders_cached() instead).
 const ACTIVE_ORDER_STATUSES = ["Approved", "In Production", "At Warehouse"];
+
+// Same 5-status set Archive uses (src/app/archive/page.tsx's
+// ARCHIVE_STATUSES, get_archive_orders_cached's equivalent) — NOT
+// exported there, so replicated exactly rather than reused. Deliberately
+// broader than ACTIVE_ORDER_STATUSES above: Departmental Performance
+// represents total historical actuals for reporting (including
+// completed/delivered orders), not "current active work." Verified
+// live before building: this scope's total revenue (GH₵787,682.00,
+// 33 rows) is a strict superset of the 3-status KPI's total
+// (GH₵776,710.00, 21 rows) — the ~GH₵11k difference is fully explained
+// by the 12 additional Delivered rows, not a bug.
+const DEPT_PERFORMANCE_STATUSES = [
+  "Approved",
+  "In Production",
+  "At Warehouse",
+  "Ready for Collection",
+  "Delivered",
+];
 
 // Matches Authorization Center's own PENDING_STATUSES (src/app/authorization/
 // page.tsx) — the real statuses a pending order can have. Previously this
@@ -117,7 +137,7 @@ async function getKpis() {
   // so switching periods client-side never needs a second round-trip.
   const trendCutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [ordersRes, pendingRes, jobsRes, trendRes] = await Promise.all([
+  const [ordersRes, pendingRes, jobsRes, trendRes, deptPerformanceRes] = await Promise.all([
     supabase
       .from("job_orders")
       .select(
@@ -136,11 +156,16 @@ async function getKpis() {
       .from("job_orders")
       .select("created_at, job_order_no, total_amount, deposit_amount")
       .gte("created_at", trendCutoff),
+    supabase
+      .from("job_orders")
+      .select("job_order_no, total_amount, deposit_amount, department, type_of_print, print_type")
+      .in("status", DEPT_PERFORMANCE_STATUSES),
   ]);
 
   const orders = (ordersRes.data ?? []) as OrderRow[];
   const jobs = (jobsRes.data ?? []) as JobRow[];
   const trendRows = (trendRes.data ?? []) as TrendOrderRow[];
+  const deptPerformanceRows = (deptPerformanceRes.data ?? []) as DeptPerformanceRow[];
 
   await triggerOverdueCollectionAlerts(supabase, orders);
 
@@ -160,6 +185,7 @@ async function getKpis() {
     orders,
     jobs: jobs as CapacityJobRow[],
     trendRows,
+    deptPerformanceRows,
   };
 }
 
@@ -179,6 +205,7 @@ export default async function CommandCenterPage() {
     orders,
     jobs,
     trendRows,
+    deptPerformanceRows,
   } = await getKpis();
 
   return (
@@ -228,6 +255,7 @@ export default async function CommandCenterPage() {
       <TrendCharts rows={trendRows} />
       <CapacityCharts jobs={jobs} />
       <OrderIntakeChart orders={orders} />
+      <DepartmentalPerformanceCharts rows={deptPerformanceRows} />
     </AppShell>
   );
 }
