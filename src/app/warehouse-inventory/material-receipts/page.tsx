@@ -11,7 +11,13 @@ import { MaterialReceiptsClient, type MaterialOption, type ReceiptRow } from "./
 // warehouse) — a Front Desk user landing here would get zero rows
 // from every query anyway, so RestrictedAccess is shown instead of a
 // confusingly empty form, matching Warehouse's own gate pattern.
-async function getMaterialOptions(): Promise<MaterialOption[]> {
+//
+// Exported: Warehouse's tabbed page (src/app/warehouse/page.tsx) reuses
+// this exact query for both its Material Receipts and Material
+// Issuance tabs (both need the same material_catalog list) instead of
+// duplicating it a third time. This route is otherwise untouched and
+// still works standalone at its own URL.
+export async function getMaterialOptions(): Promise<MaterialOption[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("material_catalog")
@@ -25,7 +31,7 @@ async function getMaterialOptions(): Promise<MaterialOption[]> {
 // this table has a distinct user-entered business date that's the
 // actually meaningful "when was this received" dimension, matching the
 // source spreadsheet's own Receipt of Material sheet.
-async function getReceiptHistory(): Promise<ReceiptRow[]> {
+export async function getReceiptHistory(): Promise<ReceiptRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("material_receipts")

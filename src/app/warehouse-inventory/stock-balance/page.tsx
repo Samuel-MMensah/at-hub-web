@@ -19,7 +19,12 @@ import { StockBalanceClient, type StockBalanceRow } from "./stock-balance-client
 // alongside this page) for why LEFT JOIN + COALESCE(...,0) is what
 // makes every material show receipts=0/issuances=0 right now, not
 // NULL, while both source tables are still empty.
-async function getStockBalance() {
+// Exported so Warehouse's tabbed page (src/app/warehouse/page.tsx) can
+// reuse this exact query instead of duplicating it — Phase 5 wires this
+// standalone route's content into a Warehouse tab without moving or
+// rebuilding it. This route itself is untouched and still works at its
+// own URL.
+export async function getStockBalance() {
   const supabase = await createClient();
 
   const { data } = await supabase

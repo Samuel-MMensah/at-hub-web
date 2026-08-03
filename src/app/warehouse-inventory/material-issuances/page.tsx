@@ -25,7 +25,13 @@ async function getMaterialOptions(): Promise<MaterialOption[]> {
 // through statuses over time, e.g. a Rejected order can be resubmitted
 // and later Approved, so restricting the picker now would just need
 // revisiting later).
-async function getJobOrderOptions(): Promise<JobOrderOption[]> {
+//
+// Exported: reused by Warehouse's tabbed page (Phase 5) — this route
+// is otherwise untouched and still works standalone at its own URL.
+// (This file's own getMaterialOptions is NOT exported — Warehouse's
+// tab reuses material-receipts/page.tsx's identical query instead of
+// this duplicate, so there's only one copy to keep in sync.)
+export async function getJobOrderOptions(): Promise<JobOrderOption[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_orders")
@@ -36,7 +42,7 @@ async function getJobOrderOptions(): Promise<JobOrderOption[]> {
 
 // Grouped by the issuance's own `date` column, same reasoning as Phase
 // 3's material_receipts — not re-litigated here.
-async function getIssuanceHistory(): Promise<IssuanceRow[]> {
+export async function getIssuanceHistory(): Promise<IssuanceRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("material_issuances")
