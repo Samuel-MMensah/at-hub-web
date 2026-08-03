@@ -3,6 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const LOGIN_PATH = "/login";
 const DEFAULT_AUTHENTICATED_PATH = "/command-center";
+// A Supabase recovery-link landing has no session yet on its very
+// first request (the code exchange happens client-side, in the
+// browser — see src/app/reset-password/page.tsx) — must be reachable
+// unauthenticated, same as /login, or this redirect would strip the
+// `?code=` param before that page's JS ever runs.
+const RESET_PASSWORD_PATH = "/reset-password";
 
 /**
  * Runs on every request to refresh the Supabase session cookie and gate
@@ -36,8 +42,9 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isLoginRoute = request.nextUrl.pathname === LOGIN_PATH;
+  const isResetPasswordRoute = request.nextUrl.pathname === RESET_PASSWORD_PATH;
 
-  if (!user && !isLoginRoute) {
+  if (!user && !isLoginRoute && !isResetPasswordRoute) {
     const url = request.nextUrl.clone();
     url.pathname = LOGIN_PATH;
     return NextResponse.redirect(url);

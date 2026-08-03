@@ -682,6 +682,61 @@ def send_departmental_alert(order_data: dict) -> bool:
     )
 
 
+def send_account_welcome(recipient_email: str, recipient_name: str, reset_link: str) -> bool:
+    """
+    NEW function, not a port -- onboarding email for a freshly created
+    Supabase Auth account, carrying a one-time password-recovery link
+    (invite-link onboarding, not a shared/typed password).
+
+    SAFETY OF `reset_link`: this is a server-generated one-time token
+    URL from `supabase.auth.admin.generate_link(type="recovery", ...)`
+    -- never user-typed, never DB-sourced free text -- so it carries
+    the same "caller is responsible, trusted input" contract already
+    established for _email_shell's heading/subheading/intro/footer
+    (see that function's own !!! WARNING !!!). It's still run through
+    html.escape() below anyway, matching how send_departmental_alert
+    treats APP_URL (also a trusted, non-attacker-controlled value) --
+    defensive consistency, not because this value is actually risky.
+
+    No dedicated button/link slot exists on _email_shell to reuse or
+    adapt -- checked send_departmental_alert's own "Open Appointed Time
+    Hub" button first, and per ITS docstring that isn't a shell
+    parameter either: it's built ad hoc by that caller and folded into
+    the `footer` argument (_email_shell has no `link_html` slot at
+    all). Same pattern reused here rather than adding a new shell
+    parameter for what would still be its only caller.
+
+    recipient_name goes into `intro`, which _email_shell does NOT
+    auto-escape (unlike `rows`) -- html.escape()'d here per that same
+    contract.
+    """
+    button_html = (
+        f'<a href="{html.escape(reset_link)}" style="display:inline-block;background:#0f172a;'
+        f'color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;'
+        f'padding:0.6rem 1.4rem;border-radius:6px;">Set Your Password</a>'
+    )
+    footer = f"{button_html}<br><br>This link is one-time use and expires soon — set your password as soon as possible."
+
+    shell_html = _email_shell(
+        accent_bg="#0f172a",
+        heading="WELCOME TO THE JOB ORDER HUB",
+        subheading="Appointed Time Printing Enterprise Hub",
+        intro=(
+            f"Hi {html.escape(recipient_name)}, you now have access to the Job Order Hub to "
+            "track the orders and revenue you bring in — live job performance and revenue "
+            "figures tied to your work. Set your password below to get started."
+        ),
+        rows=[("Account Email", recipient_email, None)],
+        footer=footer,
+    )
+    return _send_resend_email(
+        [recipient_email],
+        subject="Welcome to the Appointed Time Job Order Hub",
+        html_body=shell_html,
+        log_context="account-welcome",
+    )
+
+
 def handle_overdue_alert(order_id: int) -> dict:
     """
     Claim-then-send, extracted out of the FastAPI route so it's directly
