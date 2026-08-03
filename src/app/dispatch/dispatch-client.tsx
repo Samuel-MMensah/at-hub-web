@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
+import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
+import { parseTimestamptz } from "@/lib/parse-timestamptz";
+import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 import { recordPayment, finalizeDispatch } from "./actions";
 
 const CURRENCY = "GH₵";
@@ -15,6 +18,7 @@ export interface DispatchOrderRow {
   total_amount: number | null;
   deposit_amount: number | null;
   payment_terms: string | null;
+  created_at: string | null;
 }
 
 function money(n: number): string {
@@ -28,10 +32,39 @@ function statusTone(status: string): "success" | "warning" | "danger" | "idle" |
 }
 
 export function DispatchClient({ orders }: { orders: DispatchOrderRow[] }) {
+  // Same month-grouping convention as Audit Log / My Order Tracker
+  // (src/lib/month-groups.ts) — UTC calendar month, current month
+  // expanded by default. No search/filter on this page, so there's no
+  // isFiltering-driven force-expand case here, unlike those two.
+  const monthGroups = useMemo(() => {
+    const withDate = orders.filter((o) => o.created_at);
+    const withoutDate = orders.filter((o) => !o.created_at);
+    const groups: MonthGroup<DispatchOrderRow>[] = groupByMonth(withDate, (o) =>
+      parseTimestamptz(o.created_at as string)
+    );
+    if (withoutDate.length > 0) {
+      groups.push({ key: "", label: "Unknown Date", items: withoutDate });
+    }
+    return groups;
+  }, [orders]);
+
+  const currentKey = currentMonthKey();
+
   return (
-    <div className="flex flex-col gap-4">
-      {orders.map((order) => (
-        <DispatchOrderCard key={order.id} order={order} />
+    <div>
+      {monthGroups.map((month) => (
+        <CollapsibleMonthGroup
+          key={month.key}
+          monthLabel={month.label}
+          itemCount={month.items.length}
+          defaultExpanded={month.key === currentKey}
+        >
+          <div className="flex flex-col gap-4">
+            {month.items.map((order) => (
+              <DispatchOrderCard key={order.id} order={order} />
+            ))}
+          </div>
+        </CollapsibleMonthGroup>
       ))}
     </div>
   );

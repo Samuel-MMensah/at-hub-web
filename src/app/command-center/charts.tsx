@@ -224,7 +224,7 @@ export function TrendCharts({ rows }: { rows: TrendOrderRow[] }) {
                 <CartesianGrid stroke={GRID_COLOR} vertical={false} />
                 <XAxis dataKey="label" tick={AXIS_TICK_STYLE} axisLine={{ stroke: BORDER_COLOR }} tickLine={false} />
                 <YAxis tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
+                <Tooltip content={<ChartTooltip valueFormatter={(v) => v.toLocaleString()} />} />
                 <Line
                   type="monotone"
                   dataKey="jobs"
@@ -308,7 +308,10 @@ export function CapacityCharts({ jobs }: { jobs: CapacityJobRow[] }) {
               <CartesianGrid stroke={GRID_COLOR} vertical={false} />
               <XAxis dataKey="machine" tick={AXIS_TICK_STYLE} axisLine={{ stroke: BORDER_COLOR }} tickLine={false} />
               <YAxis tick={AXIS_TICK_STYLE} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
-              <Tooltip content={<ChartTooltip />} cursor={{ fill: "#f8fafc" }} />
+              <Tooltip
+                content={<ChartTooltip valueFormatter={(v) => v.toLocaleString()} />}
+                cursor={{ fill: "#f8fafc" }}
+              />
               <Bar dataKey="count" name="Allocated Components" fill="#0369a1" radius={[4, 4, 0, 0]} maxBarSize={40} />
             </BarChart>
           </ResponsiveContainer>
