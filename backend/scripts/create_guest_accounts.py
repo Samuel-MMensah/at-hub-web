@@ -46,6 +46,15 @@ from app.supabase_client import get_supabase
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+# Real, confirmed-live production URL (verified via curl before this
+# was ever wired in -- backend/.env's APP_URL is unset, and this isn't
+# guessed from DEPLOYMENT.md's illustrative example). Without an
+# explicit redirect_to, generate_link() falls back to the Supabase
+# project's configured Site URL, which is still http://localhost:3000
+# -- confirmed live during this task's own dry run, not assumed.
+PRODUCTION_URL = "https://hub.appointedtimeprinting.com"
+RESET_PASSWORD_REDIRECT = f"{PRODUCTION_URL}/reset-password"
+
 # Real, permanent accounts for Step 4 -- confirmed by name+email against
 # this backend's own existing SALES_REP_EMAILS (app/email.py) before
 # writing this list, not retyped independently.
@@ -103,7 +112,13 @@ def provision_guest_account(full_name: str, email: str) -> dict:
     profile_row = profile_patch.data[0]
     logger.info("Profile row patched: %s", profile_row)
 
-    link_res = supabase.auth.admin.generate_link({"type": "recovery", "email": email})
+    link_res = supabase.auth.admin.generate_link(
+        {
+            "type": "recovery",
+            "email": email,
+            "options": {"redirect_to": RESET_PASSWORD_REDIRECT},
+        }
+    )
     action_link = link_res.properties.action_link
     logger.info(
         "Recovery link generated: verification_type=%s redirect_to=%s link_len=%d",
@@ -150,8 +165,10 @@ def run_dry_run() -> None:
         and "type=recovery" in link
         and props.verification_type == "recovery"
         and bool(props.hashed_token)
+        and props.redirect_to == RESET_PASSWORD_REDIRECT
     )
-    print(f"Recovery link well-formed (https, type=recovery, real hashed_token): {link_ok}")
+    print(f"Recovery link well-formed AND points at the real production reset page: {link_ok}")
+    print(f"  expected redirect_to: {RESET_PASSWORD_REDIRECT}")
     print(f"  action_link: {link}")
     print(f"  hashed_token present: {bool(props.hashed_token)}")
     print(f"  redirect_to: {props.redirect_to}")
