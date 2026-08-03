@@ -69,7 +69,7 @@ export default function ResetPasswordPage() {
     };
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     setError(null);
 
@@ -93,7 +93,7 @@ export default function ResetPasswordPage() {
     }
 
     setStatus("done");
-    setTimeout(() => router.push("/command-center"), 1500);
+    setTimeout(() => router.push("/login"), 1500);
   }
 
   return (
