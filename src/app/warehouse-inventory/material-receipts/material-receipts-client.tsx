@@ -30,6 +30,48 @@ function money(n: number): string {
   return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const CSV_COLUMNS = ["Date", "Material", "Vendor", "Qty", "Unit Cost", "Total Cost"] as const;
+
+// CSV numeric fields are plain decimals (.toFixed(2)/.toString()), no
+// currency symbol — matches Archive's own CSV export convention, not
+// the on-screen money() display formatting. This tab has no
+// search/filter on its history table, so exporting `receipts` (the
+// full prop) already IS "the current view" — there's no separate
+// filtered subset to diverge from.
+function toRow(r: ReceiptRow): string[] {
+  return [
+    r.date,
+    r.material_catalog?.material_description ?? "",
+    r.vendor_name ?? "",
+    r.qty.toString(),
+    r.unit_cost.toFixed(2),
+    r.total_cost.toFixed(2),
+  ];
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadCsv(rows: string[][]) {
+  const lines = [CSV_COLUMNS.join(","), ...rows.map((row) => row.map(csvEscape).join(","))];
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  link.href = url;
+  link.download = `ATP_material_receipts_${yyyy}${mm}${dd}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 // `date` is a plain Postgres DATE (e.g. "2026-08-03"), not timestamptz —
 // a bare YYYY-MM-DD string is unambiguously parsed as UTC midnight per
 // the ECMAScript Date spec (unlike a date-time string with no offset,
@@ -62,8 +104,13 @@ export function MaterialReceiptsClient({
     <div>
       <ReceiptForm materials={materials} />
 
-      <div className="mb-3 mt-8 border-t-2 border-slate-100 pt-6 text-base font-bold text-at-navy">
-        Receipt History
+      <div className="mb-3 mt-8 flex items-center justify-between border-t-2 border-slate-100 pt-6">
+        <div className="text-base font-bold text-at-navy">Receipt History</div>
+        {receipts.length > 0 && (
+          <Button onClick={() => downloadCsv(receipts.map(toRow))} className="whitespace-nowrap">
+            ⬇️ Download Receipts CSV
+          </Button>
+        )}
       </div>
 
       {receipts.length === 0 ? (

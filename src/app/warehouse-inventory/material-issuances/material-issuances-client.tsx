@@ -41,6 +41,62 @@ function money(n: number): string {
   return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const CSV_COLUMNS = [
+  "Date",
+  "Material",
+  "Order No.",
+  "Customer",
+  "Qty",
+  "Unit Cost",
+  "Total Cost",
+  "Dept",
+  "Oracle Req #",
+  "Document",
+  "Oracle Shipment No.",
+] as const;
+
+// Same convention as Material Receipts' CSV export: plain decimals, no
+// currency symbol. No search/filter exists on this tab's history
+// either, so `issuances` (the full prop) already IS the current view.
+function toRow(r: IssuanceRow): string[] {
+  return [
+    r.date,
+    r.material_catalog?.material_description ?? "",
+    r.job_order_no ?? "",
+    r.customer_name ?? "",
+    r.qty.toString(),
+    r.unit_cost.toFixed(2),
+    r.total_cost.toFixed(2),
+    r.user_department ?? "",
+    r.oracle_req_no ?? "",
+    r.document ?? "",
+    r.oracle_shipment_no ?? "",
+  ];
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadCsv(rows: string[][]) {
+  const lines = [CSV_COLUMNS.join(","), ...rows.map((row) => row.map(csvEscape).join(","))];
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  link.href = url;
+  link.download = `ATP_material_issuance_${yyyy}${mm}${dd}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 // Same rationale as Phase 3: a plain DATE column string is
 // unambiguously parsed as UTC midnight per the ECMAScript spec.
 function parseDateOnly(raw: string): Date {
@@ -70,8 +126,13 @@ export function MaterialIssuancesClient({
     <div>
       <IssuanceForm materials={materials} jobOrders={jobOrders} />
 
-      <div className="mb-3 mt-8 border-t-2 border-slate-100 pt-6 text-base font-bold text-at-navy">
-        Issuance History
+      <div className="mb-3 mt-8 flex items-center justify-between border-t-2 border-slate-100 pt-6">
+        <div className="text-base font-bold text-at-navy">Issuance History</div>
+        {issuances.length > 0 && (
+          <Button onClick={() => downloadCsv(issuances.map(toRow))} className="whitespace-nowrap">
+            ⬇️ Download Issuance CSV
+          </Button>
+        )}
       </div>
 
       {issuances.length === 0 ? (

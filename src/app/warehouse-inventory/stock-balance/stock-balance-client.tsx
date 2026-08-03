@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 
 const CURRENCY = "GH₵";
@@ -16,6 +17,8 @@ export interface StockBalanceRow {
   issuances: number;
   on_hand: number;
   unit_cost_ghc: number;
+  weighted_avg_cost: number;
+  most_recent_cost: number;
   value: number;
 }
 
@@ -35,9 +38,52 @@ const COLUMNS = [
   "Receipts",
   "Issuances",
   "On-Hand",
-  "Unit Cost",
+  "Weighted Avg Cost",
+  "Most Recent Cost",
   "Value",
 ] as const;
+
+// CSV numeric fields are plain decimals (.toFixed(2)/.toString()), no
+// currency symbol or thousands separator — matches Archive's own CSV
+// export convention (archive-client.tsx's downloadCsv), not the
+// on-screen money()/qty() display formatting.
+function toRow(row: StockBalanceRow): string[] {
+  return [
+    row.material_description,
+    row.material_category,
+    row.uom ?? "",
+    row.opening_inventory.toString(),
+    row.receipts.toString(),
+    row.issuances.toString(),
+    row.on_hand.toString(),
+    row.weighted_avg_cost.toFixed(2),
+    row.most_recent_cost.toFixed(2),
+    row.value.toFixed(2),
+  ];
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadCsv(rows: string[][]) {
+  const lines = [COLUMNS.join(","), ...rows.map((row) => row.map(csvEscape).join(","))];
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  link.href = url;
+  link.download = `ATP_stock_balance_${yyyy}${mm}${dd}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 interface SectionGroup {
   key: string;
@@ -106,9 +152,13 @@ export function StockBalanceClient({ rows }: { rows: StockBalanceRow[] }) {
           placeholder="Material · Category · Section…"
           className="flex-1 rounded-at border border-at-border bg-at-white px-4 py-2.5 text-sm text-at-navy outline-none focus:border-at-accent"
         />
-        <div className="whitespace-nowrap text-xs font-semibold text-at-slate">
-          {filtered.length.toLocaleString()} material(s) · Total Value {money(totalValue)}
-        </div>
+        <Button onClick={() => downloadCsv(filtered.map(toRow))} className="whitespace-nowrap">
+          ⬇️ Download Stock Balance CSV
+        </Button>
+      </div>
+
+      <div className="mb-4 whitespace-nowrap text-xs font-semibold text-at-slate">
+        {filtered.length.toLocaleString()} material(s) · Total Value {money(totalValue)}
       </div>
 
       {filtered.length === 0 ? (
@@ -160,7 +210,10 @@ export function StockBalanceClient({ rows }: { rows: StockBalanceRow[] }) {
                         {qty(row.on_hand)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">
-                        {money(row.unit_cost_ghc)}
+                        {money(row.weighted_avg_cost)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">
+                        {money(row.most_recent_cost)}
                       </td>
                       <td
                         className="whitespace-nowrap px-4 py-2.5 text-right font-bold"

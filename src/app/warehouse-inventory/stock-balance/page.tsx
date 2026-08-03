@@ -49,7 +49,9 @@ export default async function StockBalancePage() {
 
       <div className="mb-1 text-lg font-bold text-at-navy-soft">Stock Balance</div>
       <div className="mb-4 text-sm text-at-slate">
-        On-Hand = Opening Inventory + Receipts − Issuances. Value = Unit Cost × On-Hand.
+        On-Hand = Opening Inventory + Receipts − Issuances. Value = Weighted Avg Cost × On-Hand
+        (opening inventory counts as a first &quot;receipt&quot; at the catalog cost). Most Recent
+        Cost is shown for reference — the unit cost of this material&apos;s latest receipt.
       </div>
 
       {rows.length === 0 ? (
