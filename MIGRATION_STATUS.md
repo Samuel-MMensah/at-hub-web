@@ -24,7 +24,14 @@ hosting/keys setup.
   was permanently disabled). Writes `warehouse_notified_finance = true`
   via an atomic guarded UPDATE, then attempts email #7
   (`notify_ready_for_finance`) best-effort. See "Backend service —
-  deferred notifications".
+  deferred notifications". **Now a 4-tab page** (Receiving — this
+  original content, unchanged — plus Stock Balance, Material Receipts,
+  Material Issuance) — see "Materials Inventory Management" below for
+  the full subsystem writeup. The three new tabs' content is also still
+  independently reachable at their own standalone URLs
+  (`/warehouse-inventory/stock-balance`, `.../material-receipts`,
+  `.../material-issuances`) — Warehouse's tabs are a second entry point
+  to the same routes/components, not a replacement.
 - `/dispatch` — real, role-gated (`ADMIN_ROLES ∪ FINANCE_ROLES`). Real
   writes: Record Payment (cumulative deposit total, not incremental),
   Finalize Dispatch (writes `status = 'Delivered'` +
@@ -760,6 +767,125 @@ functions, their recipient helpers, `SALES_REP_EMAILS`,
 `_job_detail_rows`, the five `handle_*` functions) and `backend/app/
 main.py`'s five `/email/*` endpoints — these files are the source of
 truth, not this doc.
+
+## Materials Inventory Management
+
+New subsystem, not a 1:1 route port — ported from a real Excel template
+(3 sheets: Receipt of Material, Material Issuance, Stock Balance
+Report) into a live, database-backed system across 5 phases. Live at
+`/warehouse`'s tab bar (Receiving / Stock Balance / Material Receipts /
+Material Issuance) and still independently reachable at the original
+standalone URLs each tab was built and verified at
+(`/warehouse-inventory/stock-balance`, `.../material-receipts`,
+`.../material-issuances` — see "Routes migrated" → `/warehouse`).
+
+- **Deliberate improvement over the source, not a faithful port of its
+  mechanism**: the original spreadsheet's Stock Balance Report sheet
+  used per-row `SUMIF` formulas that could silently break if a range
+  got edited. `stock_balance` here is a real Postgres `VIEW` —
+  `opening_inventory + SUM(receipts) − SUM(issuances)`, computed live
+  on every read via a single `LEFT JOIN` + `COALESCE(...,0)` aggregate
+  query, not a stored/cached value that can drift out of sync with the
+  transactions behind it.
+
+**Schema**: `material_catalog` (479 real materials imported from the
+source file — `id`, `material_description` `UNIQUE`, `section_group`,
+`material_category`, `uom`, `opening_inventory`, `unit_cost_ghc`),
+`material_receipts` and `material_issuances` (both real transaction
+tables, `total_cost` a `GENERATED ALWAYS AS (qty * unit_cost) STORED`
+column on each), and the `stock_balance` view joining all three.
+
+- **Two real data-quality issues found and fixed during the 479-row
+  import, not silently passed through**: one pre-existing duplicate in
+  the source file merged (`SM52 Side belows`, combined stock 10,
+  confirmed the two source rows agreed on every other field before
+  merging); one encoding bug found and fixed at its actual root
+  cause — three GIFT ITEMS rows (`White`/`Blue`/`Black Bluetooth
+  Speaker Size:Φ85Mm...`) had their `Φ` character corrupted to
+  mojibake (`Î¦`). Traced to the byte level (UTF-8 bytes for `Φ`
+  misread as Latin-1, then re-encoded) and confirmed the corruption was
+  introduced when the source CSV was saved to a scratchpad file during
+  import prep — **not** a defect in the source spreadsheet itself
+  (independently confirmed against the user's original file) and
+  **not** a bug in the import script (its UTF-8 read/write path was
+  proven correct — the corrupted bytes were already in the file before
+  the script ever read it). Fixed at the DB row level and in the
+  scratchpad file itself, so a future re-run of the same import
+  wouldn't reintroduce it.
+- **One known anomaly, deliberately preserved, not resolved**:
+  `Filter Bag Technorans` has `opening_inventory = -2` in the real
+  source data. Imported faithfully as-is rather than silently
+  clamped to 0 — `stock_balance.on_hand` for this row is confirmed to
+  correctly show negative values, not floored. Left unresolved pending
+  a real business answer for what a negative opening balance actually
+  means here.
+
+**Access control**: all three base tables are RLS-gated to
+`ADMIN_ROLES ∪ WAREHOUSE_ROLES`, enforced through a new
+`current_user_role()` SQL function (`SECURITY DEFINER`, reads
+`profiles.role` for `auth.uid()`) — built as genuinely reusable
+infrastructure for this policy and any future role-gated table, not a
+one-off. Role comparison is case-insensitive
+(`lower(current_user_role()) IN (...)`), matching this app's real,
+mixed-case stored role strings (`'Admin'`, `'md'`, `'fm'`, `'warehouse'`,
+etc. — never assumed lowercase).
+
+- **A real incident, worth stating as a lesson and not just a fixed
+  bug.** `stock_balance` was originally created `SECURITY DEFINER` (the
+  Postgres default for a view), meaning it silently ran as its
+  creator and bypassed RLS on the three base tables entirely,
+  regardless of who queried it. This was found via **Supabase's own
+  linter flagging it**, not by this migration going looking for it.
+  Fixed to `SECURITY INVOKER` — but fixing it surfaced a second,
+  bigger problem immediately: all three base tables already had RLS
+  *enabled* with **zero policies** on them, which meant the
+  `SECURITY DEFINER` bypass had been the *only* thing letting real
+  logged-in users see any of this data at all. Switching to
+  `SECURITY INVOKER` without adding real `SELECT`/`INSERT` policies
+  first would have taken the entire Stock Balance page from "working"
+  to "empty for every real user" in one deploy. **Every verification
+  of Stock Balance up through Phase 2 had used the service-role key**,
+  which bypasses RLS by construction — so this gap was invisible to
+  every test run up to that point, not just unlucky to miss. From this
+  incident forward, every RLS policy in this arc (the three
+  `SELECT` policies, plus `material_receipts`/`material_issuances`'
+  own `INSERT` policies added in Phases 3-4) was verified with
+  **disposable real-session test accounts** (a genuine warehouse-role
+  account confirmed to succeed, a genuine finance-role account
+  confirmed to get a real Postgres `42501` rejection, not an
+  application-level assumption) — created fresh, exercised, and
+  deleted every time, never trusted on service-role behavior alone.
+
+**Deliberate enhancements over the original spreadsheet** (each
+discussed and approved, not silently introduced): Material Issuance's
+Order No. is a real `job_order_no` foreign key to `job_orders`, not
+freeform text like the source — enabling real "what materials went
+into this job" reporting the original spreadsheet had no way to do.
+Material Issuance also gained a `date` column entirely absent from the
+original template.
+
+**Verification trail**: every write path — Material Receipts (Phase 3)
+and Material Issuance (Phase 4) — was tested end-to-end against real
+`on_hand` deltas on a real material (A4 Copy Paper), not just "the
+insert succeeded": a receipt of 37 moved `on_hand` 1500 → 1537 → 1500
+after cleanup; an issuance of 23 moved it 1500 → 1477 → 1500 — the
+sign flip (issuance subtracts) was independently confirmed, not
+assumed symmetric with receipts. Material Issuance's `job_order_no` FK
+was independently proven to resolve to a real order's customer/order
+number via a live join, not just displayed as stored text. Every
+disposable test account and every synthetic test row/order created
+during this verification was deleted and its absence re-confirmed
+afterward.
+
+**Status**: all 5 phases complete and live — Phase 1 (schema + 479-row
+import), Phase 2 (Stock Balance), Phase 3 (Material Receipts), Phase 4
+(Material Issuance), Phase 5 (wired into `/warehouse` as tabs,
+standalone URLs still live). Exact logic lives in
+`src/app/warehouse-inventory/` (the three standalone routes),
+`src/app/warehouse/warehouse-tabs.tsx` (the tab shell reusing them),
+and the `material_catalog`/`material_receipts`/`material_issuances`/
+`stock_balance` schema itself — these are the source of truth, not
+this doc.
 
 ## Shared infrastructure
 
