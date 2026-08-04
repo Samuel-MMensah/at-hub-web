@@ -388,6 +388,34 @@ None — every route now has at least a Phase 1 built in Next.js.
   if that lookup fails). `profiles`' `SELECT` RLS policy is
   `roles: {public}`, `qual: true` — verified via `pg_policies`, not
   assumed — so this lookup isn't silently blocked by RLS.
+  **`requireUser()`'s own lookup works regardless of this policy's real
+  shape**, because it always filters `id = auth.uid()` — a caller can
+  read its own row under either a genuinely public policy or a
+  self-scoped one. Don't take this as evidence the policy is broadly
+  readable; see the correction directly below, which contradicts that.
+- **CORRECTION (2026-08-04), second time this exact policy has caused
+  confusion — read this before trusting anything above it or assuming
+  `profiles` is broadly readable.** Re-verified live with real,
+  disposable sessions (Front Desk / Admin / Finance roles), not the
+  `pg_policies` catalog text: an **unfiltered** `select * from profiles`
+  through each of those sessions returned **exactly 1 row — the
+  caller's own** — not all rows. Whatever `pg_policies` showed at the
+  time the note above was written, the actual, current, empirically-
+  tested behavior is a **self-scoped SELECT policy** (`auth.uid() =
+  id`), not `qual: true`/broadly public, for every role tested,
+  including Admin. This was discovered building `get_sales_reps()`
+  (see `src/lib/sales-reps.ts` / the clients-subsystem sales-rep task):
+  a direct `.from("profiles")` query for `is_sales_rep = true` rows
+  silently returned an empty list for every real caller except when
+  querying their own row. Fixed with a narrow `SECURITY DEFINER` RPC
+  (`get_sales_reps()`, same pattern as `current_user_role()` below) —
+  `profiles`' RLS itself was deliberately left untouched, per this
+  project's own standing decision to defer that policy change
+  separately. **Any future code that needs to read `profiles` rows
+  other than the caller's own must go through a similar `SECURITY
+  DEFINER` function, or re-verify live with a real non-owning session
+  first — do not trust a "public"/"qual: true" description of this
+  policy from anywhere in this document without re-checking.**
 - `src/app/login/` — sign-in form (`page.tsx`, `useActionState`) and
   `login()`/`logout()` server actions (`actions.ts`).
 - `AppShell`'s `userName`/`userRole`/`role` props come from
