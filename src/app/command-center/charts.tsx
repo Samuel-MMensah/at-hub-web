@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+import { weekStart } from "@/lib/week-groups";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 
 const CURRENCY = "GH₵";
@@ -101,14 +102,6 @@ export interface TrendOrderRow {
 }
 
 type TrendPeriod = "Weekly" | "Monthly";
-
-function weekStart(date: Date): Date {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay(); // 0=Sun..6=Sat
-  const diffToMonday = (day + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - diffToMonday);
-  return d;
-}
 
 function monthStart(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
