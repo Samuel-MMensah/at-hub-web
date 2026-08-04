@@ -301,13 +301,19 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
   function handleRecordPayment() {
     setError(null);
     setSuccess(null);
-    const newDeposit = deposit + payAmt;
     startTransition(async () => {
-      const result = await recordPayment(order.id, newDeposit, receiptNo);
+      // recordPayment now takes the INCREMENTAL payment amount only —
+      // it re-fetches the real current deposit_amount server-side and
+      // computes the new cumulative total itself (fixed: previously
+      // this component computed deposit + payAmt and the action wrote
+      // that as-is). No longer showing a "new deposit total" in the
+      // success message since that value is no longer computed
+      // client-side and isn't returned by the action.
+      const result = await recordPayment(order.id, payAmt, receiptNo);
       if (result.error) {
         setError(result.error);
       } else {
-        setSuccess(`Payment of ${money(payAmt)} recorded. New deposit total: ${money(newDeposit)}`);
+        setSuccess(`Payment of ${money(payAmt)} recorded.`);
       }
     });
   }

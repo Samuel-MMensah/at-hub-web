@@ -17,22 +17,59 @@ async function requireArchiveAccess() {
   return user;
 }
 
-// Same cumulative-deposit contract as dispatch/actions.ts's recordPayment
-// (mirrors record_balance_payment(id, new_deposit_total) — newDepositTotal
-// is the NEW CUMULATIVE deposit, not the incremental payment; the caller
-// computes deposit + payAmt before calling this). Replicated rather than
-// imported: importing dispatch's action would call revalidatePath("/dispatch"),
-// leaving this page's own data stale after a payment. Same logic, gated to
-// Archive's own ADMIN_ROLES-only access (not the ADMIN∪FINANCE union
-// Dispatch uses) since that's this route's existing access boundary.
+// FIXED — same vulnerability class just closed in Dispatch's
+// recordPayment and job_invoices' recordInvoicePayment: this
+// previously took a client-computed newDepositTotal (deposit + payAmt
+// from archive-client.tsx) and wrote it as-is, no server-side re-fetch
+// of the real current deposit, no cap check against total_amount.
+// Fixed the identical way: take the INCREMENTAL payment amount only,
+// re-fetch the real current deposit_amount/total_amount through the
+// caller's own session, compute the new cumulative total from THAT,
+// and reject outright (not clamp) if it would exceed total_amount.
+//
+// Still a genuinely separate, independently-duplicated function, not
+// consolidated with Dispatch's copy — importing Dispatch's action
+// would call revalidatePath("/dispatch"), leaving this page's own data
+// stale after a payment (the reason this was replicated in the first
+// place, per this file's original comment). Deliberately not merged
+// into one shared function as part of this fix — that consolidation
+// is a legitimate separate refactor, not something to blend into a
+// correctness fix. Still gated to Archive's own ADMIN_ROLES-only
+// access (not the ADMIN∪FINANCE union Dispatch uses), matching this
+// route's existing access boundary.
 export async function recordPayment(
   orderId: number,
-  newDepositTotal: number,
+  paymentAmount: number,
   receiptNo: string
 ): Promise<ActionResult> {
   await requireArchiveAccess();
 
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    return { error: "Payment amount must be greater than 0." };
+  }
+
   const supabase = await createClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("job_orders")
+    .select("deposit_amount, total_amount")
+    .eq("id", orderId)
+    .single();
+
+  if (fetchError || !current) {
+    return { error: fetchError?.message ?? "Order not found." };
+  }
+
+  const currentDeposit = Number(current.deposit_amount ?? 0);
+  const totalAmount = Number(current.total_amount ?? 0);
+  const newDepositTotal = currentDeposit + paymentAmount;
+
+  if (newDepositTotal > totalAmount) {
+    return {
+      error: `Payment of ${paymentAmount.toFixed(2)} exceeds the outstanding balance of ${(totalAmount - currentDeposit).toFixed(2)}.`,
+    };
+  }
+
   const { error } = await supabase
     .from("job_orders")
     .update({
