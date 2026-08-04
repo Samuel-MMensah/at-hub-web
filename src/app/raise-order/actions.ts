@@ -84,6 +84,8 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   const pgid = String(formData.get("pgid") ?? "");
   const clientName = String(formData.get("clientName") ?? "").trim();
   const clientPhone = String(formData.get("clientPhone") ?? "").trim();
+  const isNewClient = formData.get("isNewClient") === "true";
+  const clientEmail = String(formData.get("clientEmail") ?? "").trim();
   const itemsJson = String(formData.get("items") ?? "[]");
   const sampleAttached = String(formData.get("sampleAttached") ?? "No");
   const sampleWith = String(formData.get("sampleWith") ?? "").trim();
@@ -111,6 +113,62 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   }
 
   const supabase = await createClient();
+
+  // Phase 2 of the clients subsystem: the client picker's "+ New
+  // Client" path lands here. Real gate against the duplicate-name
+  // case (the client-side check in raise-order-client.tsx is only a
+  // convenience — this is the actual boundary). ilike with no % wildcards
+  // in the pattern is an exact, case-insensitive match — confirmed
+  // decision: "ABC Ltd" and "abc ltd" are the same client, and
+  // clients.name's real UNIQUE constraint is case-SENSITIVE, so an
+  // exact-case duplicate can't reach this path anyway. Never silently
+  // reused — a match here stops the whole batch before either the
+  // client or any job_orders row is written.
+  if (isNewClient) {
+    const { data: existingClient, error: lookupError } = await supabase
+      .from("clients")
+      .select("id, name, phone, email")
+      .ilike("name", clientName)
+      .maybeSingle();
+
+    if (lookupError) {
+      return { error: `Could not verify client name: ${lookupError.message}` };
+    }
+    if (existingClient) {
+      return {
+        error: `A client named "${existingClient.name}" already exists (phone: ${
+          existingClient.phone || "—"
+        }, email: ${existingClient.email || "—"}). Select them from the client list instead of raising a new one, or use a more specific name if this is genuinely a different client.`,
+      };
+    }
+
+    // Sequencing note (deliberate, not an oversight): this is a plain
+    // INSERT followed by a separate bulk INSERT below — two round trips
+    // to PostgREST, NOT one atomic DB transaction/RPC. Chosen over
+    // building a transactional RPC because clients.name is not a
+    // foreign key of job_orders (customer_name is plain text, no FK
+    // constraint), so there is no referential-integrity requirement
+    // forcing atomicity here — unlike the Phase 3 batch-insert fix,
+    // where a partial multi-row insert was the actual risk being
+    // eliminated.
+    //
+    // Real risk: if this INSERT succeeds but the job_orders insert
+    // below then fails, the new clients row is left orphaned (a client
+    // with no orders yet). This is self-healing, not silent data
+    // corruption: the row is genuinely the name the user typed, it's
+    // harmless sitting unused in the client list, and a retry of the
+    // same submission will hit the ilike check above and correctly
+    // offer to reuse it rather than erroring or double-creating.
+    const { data: newClient, error: insertClientError } = await supabase
+      .from("clients")
+      .insert({ name: clientName, phone: clientPhone || null, email: clientEmail || null })
+      .select()
+      .single();
+
+    if (insertClientError || !newClient) {
+      return { error: `Could not create client: ${insertClientError?.message ?? "unknown error"}` };
+    }
+  }
 
   const lpoFileEntry = formData.get("lpoFile");
   const sampleFileEntry = formData.get("sampleFile");

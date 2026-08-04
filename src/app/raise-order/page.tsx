@@ -4,7 +4,7 @@ import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, RAISE_ORDER_ROLES, hasRole } from "@/lib/nav-config";
-import { RaiseOrderClient, type ResubmitOrderData } from "./raise-order-client";
+import { RaiseOrderClient, type ResubmitOrderData, type ClientOption } from "./raise-order-client";
 
 // Hand-off from My Order Tracker's "Modify & Resubmit" link
 // (order-tracker-client.tsx): /raise-order?resubmit={id}. Matches how
@@ -28,6 +28,16 @@ async function getResubmitOrder(orderId: number, userEmail: string): Promise<Res
   return data as ResubmitOrderData;
 }
 
+// Phase 2 of the clients subsystem — feeds the New Press/New Garment
+// cart forms' client picker. Not fetched for resubmit mode (out of
+// scope for this phase — resubmit edits an already-known order's
+// existing customer, see raise-order-client.tsx).
+async function getClients(): Promise<ClientOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("clients").select("id, name, phone, email").order("name", { ascending: true });
+  return (data ?? []) as ClientOption[];
+}
+
 export default async function RaiseOrderPage({
   searchParams,
 }: {
@@ -45,6 +55,7 @@ export default async function RaiseOrderPage({
     allowed && resubmitId !== null && !Number.isNaN(resubmitId)
       ? await getResubmitOrder(resubmitId, user.email)
       : null;
+  const clients = allowed && !resubmitOrder ? await getClients() : [];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -62,7 +73,7 @@ export default async function RaiseOrderPage({
             </div>
           )}
 
-          <RaiseOrderClient userEmail={user.email} resubmitOrder={resubmitOrder} />
+          <RaiseOrderClient userEmail={user.email} resubmitOrder={resubmitOrder} clients={clients} />
         </>
       )}
     </AppShell>

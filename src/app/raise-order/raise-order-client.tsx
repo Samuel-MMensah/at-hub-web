@@ -209,6 +209,182 @@ function AttachmentsAndTermsSection({
   );
 }
 
+// Phase 2 of the clients subsystem: identity/contact only (see
+// clients table, Phase 1) — no ownership fields here, sales_rep stays
+// a per-order field on job_orders, untouched by this picker.
+export interface ClientOption {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
+
+const NEW_CLIENT_VALUE = "__new_client__";
+
+// Same search+select pattern as Material Issuance's order picker
+// (material-issuances-client.tsx's IssuanceForm: a free-text filter
+// input above a <select> of candidates) plus an explicit "+ New
+// Client" sentinel option, always last in the list. Shared by both
+// PressCart and GarmentCart — identical Client Identity block in both,
+// same in-file-sharing precedent as FormField/SectionHeader/
+// AttachmentsAndTermsSection above.
+//
+// Selecting an existing client auto-fills name/phone into the
+// (still-editable) fields below — "auto-fill from source, never
+// locked," same convention as Material Issuance's unit cost / customer
+// name auto-fill. Selecting "+ New Client" reveals the same name/phone
+// fields empty, plus an email field only relevant to the new-client
+// path (job_orders itself has no email column — email only ever
+// reaches the clients table, never a job_orders row).
+//
+// The duplicate-name warning below is a client-side convenience only —
+// the real gate is submitBatch's own case-insensitive check
+// server-side (a Server Action is a real network boundary, and this
+// component's `clients` list is a snapshot fetched at page load, not
+// guaranteed current by the time of submit).
+function ClientIdentitySection({
+  clients,
+  clientSearch,
+  setClientSearch,
+  selectedClientId,
+  setSelectedClientId,
+  clientName,
+  setClientName,
+  clientPhone,
+  setClientPhone,
+  clientEmail,
+  setClientEmail,
+}: {
+  clients: ClientOption[];
+  clientSearch: string;
+  setClientSearch: (v: string) => void;
+  selectedClientId: number | "new" | "";
+  setSelectedClientId: (v: number | "new" | "") => void;
+  clientName: string;
+  setClientName: (v: string) => void;
+  clientPhone: string;
+  setClientPhone: (v: string) => void;
+  clientEmail: string;
+  setClientEmail: (v: string) => void;
+}) {
+  const q = clientSearch.trim().toLowerCase();
+  const candidates = q ? clients.filter((c) => c.name.toLowerCase().includes(q)) : clients;
+
+  function handleSelect(raw: string) {
+    if (raw === "") {
+      setSelectedClientId("");
+      setClientName("");
+      setClientPhone("");
+      setClientEmail("");
+      return;
+    }
+    if (raw === NEW_CLIENT_VALUE) {
+      setSelectedClientId("new");
+      setClientName("");
+      setClientPhone("");
+      setClientEmail("");
+      return;
+    }
+    const id = Number(raw);
+    setSelectedClientId(id);
+    const client = clients.find((c) => c.id === id);
+    setClientName(client?.name ?? "");
+    setClientPhone(client?.phone ?? "");
+    setClientEmail("");
+  }
+
+  // Case-insensitive — confirmed decision: "ABC Ltd" and "abc ltd" are
+  // treated as the same client for this warning, since clients.name's
+  // real UNIQUE constraint is case-SENSITIVE (an exact-case duplicate
+  // literally cannot be inserted regardless) and a case-only variant is
+  // almost always the same real-world client, not a new one.
+  const duplicate =
+    selectedClientId === "new" && clientName.trim()
+      ? clients.find((c) => c.name.trim().toLowerCase() === clientName.trim().toLowerCase())
+      : undefined;
+
+  return (
+    <div>
+      <FormField label="Find Client">
+        <input
+          type="text"
+          value={clientSearch}
+          onChange={(e) => setClientSearch(e.target.value)}
+          placeholder="Search by client name..."
+          className="mb-2 w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+        />
+        <select
+          value={selectedClientId === "new" ? NEW_CLIENT_VALUE : selectedClientId}
+          onChange={(e) => handleSelect(e.target.value)}
+          className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+        >
+          <option value="">— Select a client —</option>
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+              {c.phone ? ` — ${c.phone}` : ""}
+            </option>
+          ))}
+          <option value={NEW_CLIENT_VALUE}>+ New Client…</option>
+        </select>
+        {candidates.length === 0 && clientSearch.trim() && (
+          <div className="mt-2 text-sm text-at-slate">
+            No matching client — choose &ldquo;+ New Client&rdquo; above to add one.
+          </div>
+        )}
+      </FormField>
+
+      {selectedClientId !== "" && (
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Customer Name ★">
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          <FormField label="Telephone Number ★">
+            <input
+              type="text"
+              value={clientPhone}
+              onChange={(e) => setClientPhone(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </FormField>
+          {selectedClientId === "new" && (
+            <FormField label="Email (optional)">
+              <input
+                type="email"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
+                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+              />
+            </FormField>
+          )}
+        </div>
+      )}
+
+      {duplicate && (
+        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-bold">A client named &ldquo;{duplicate.name}&rdquo; already exists.</div>
+          <div className="mt-1 text-xs text-amber-800">
+            Phone: {duplicate.phone || "—"} &nbsp;·&nbsp; Email: {duplicate.email || "—"}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => handleSelect(String(duplicate.id))}>
+              Use this existing client instead
+            </Button>
+            <span className="text-xs text-amber-800">
+              or adjust the name above if this is genuinely a different client.
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Full original job_orders row for the order being resubmitted — every
 // _rd()/_rdf()/_rdi()/_rdd()/_rdl() call in both resubmit forms
 // (app.py) reads straight off resubmit_data, which is the ENTIRE
@@ -270,9 +446,11 @@ export interface ResubmitOrderData {
 export function RaiseOrderClient({
   userEmail,
   resubmitOrder,
+  clients,
 }: {
   userEmail: string;
   resubmitOrder: ResubmitOrderData | null;
+  clients: ClientOption[];
 }) {
   const [department, setDepartment] = useState<"PRESS" | "GARMENT">("PRESS");
 
@@ -320,7 +498,11 @@ export function RaiseOrderClient({
 
       <div className="mb-4 text-lg font-bold text-at-navy-soft">{department} Job Order Entry</div>
 
-      {department === "PRESS" ? <PressCart userEmail={userEmail} /> : <GarmentCart userEmail={userEmail} />}
+      {department === "PRESS" ? (
+        <PressCart userEmail={userEmail} clients={clients} />
+      ) : (
+        <GarmentCart userEmail={userEmail} clients={clients} />
+      )}
     </div>
   );
 }
@@ -451,14 +633,17 @@ function itemFormFromCartItem(item: PressCartItem): ItemFormState {
   };
 }
 
-function PressCart({ userEmail }: { userEmail: string }) {
+function PressCart({ userEmail, clients }: { userEmail: string; clients: ClientOption[] }) {
   // Lazy initializer — same purity reasoning as every other Date-based
   // default in this codebase (GanttChart's `now`, Shop Floor's
   // todayLocalDateStr, Production Layout Builder's todayLocalDateStr).
   const [today] = useState(() => todayLocalDateStr());
 
+  const [clientSearch, setClientSearch] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<number | "new" | "">("");
   const [cartClientName, setCartClientName] = useState("");
   const [cartClientPhone, setCartClientPhone] = useState("");
+  const [cartClientEmail, setCartClientEmail] = useState("");
   const [cartItems, setCartItems] = useState<PressCartItem[]>([]);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
@@ -504,8 +689,11 @@ function PressCart({ userEmail }: { userEmail: string }) {
 
   function clearCart() {
     setCartItems([]);
+    setClientSearch("");
+    setSelectedClientId("");
     setCartClientName("");
     setCartClientPhone("");
+    setCartClientEmail("");
     setEditingIdx(null);
   }
 
@@ -588,12 +776,27 @@ function PressCart({ userEmail }: { userEmail: string }) {
       setSubmitError("Sample is marked attached — enter who has it before submitting.");
       return;
     }
+    // Client-side convenience copy of the same case-insensitive check
+    // submitBatch runs server-side — this just gives an immediate error
+    // instead of a round-trip when the inline warning under the picker
+    // somehow got missed/dismissed. The server check is the real gate.
+    if (selectedClientId === "new") {
+      const dup = clients.find((c) => c.name.trim().toLowerCase() === cartClientName.trim().toLowerCase());
+      if (dup) {
+        setSubmitError(
+          `A client named "${dup.name}" already exists (phone: ${dup.phone || "—"}). Select them from the client list instead, or adjust the name if this is a different client.`
+        );
+        return;
+      }
+    }
 
     const pgid = generateParentGroupId("PG");
     const fd = new FormData();
     fd.set("pgid", pgid);
     fd.set("clientName", cartClientName);
     fd.set("clientPhone", cartClientPhone);
+    fd.set("isNewClient", String(selectedClientId === "new"));
+    fd.set("clientEmail", cartClientEmail);
     fd.set("items", JSON.stringify(cartItems));
     fd.set("sampleAttached", attachments.sampleAttached);
     fd.set("sampleWith", attachments.sampleWith);
@@ -613,8 +816,11 @@ function PressCart({ userEmail }: { userEmail: string }) {
       setConfirmedBatch(result.submitted ?? []);
       if (result.warnings) setSubmitWarnings(result.warnings);
       setCartItems([]);
+      setClientSearch("");
+      setSelectedClientId("");
       setCartClientName("");
       setCartClientPhone("");
+      setCartClientEmail("");
       setEditingIdx(null);
       setAttachments(blankAttachmentsTerms());
     });
@@ -646,24 +852,19 @@ function PressCart({ userEmail }: { userEmail: string }) {
 
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
         <SectionHeader>Client Identity — Shared Across All Items in This Batch</SectionHeader>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Customer Name ★">
-            <input
-              type="text"
-              value={cartClientName}
-              onChange={(e) => setCartClientName(e.target.value)}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-          <FormField label="Telephone Number ★">
-            <input
-              type="text"
-              value={cartClientPhone}
-              onChange={(e) => setCartClientPhone(e.target.value)}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-        </div>
+        <ClientIdentitySection
+          clients={clients}
+          clientSearch={clientSearch}
+          setClientSearch={setClientSearch}
+          selectedClientId={selectedClientId}
+          setSelectedClientId={setSelectedClientId}
+          clientName={cartClientName}
+          setClientName={setCartClientName}
+          clientPhone={cartClientPhone}
+          setClientPhone={setCartClientPhone}
+          clientEmail={cartClientEmail}
+          setClientEmail={setCartClientEmail}
+        />
 
         <SectionHeader>Product Item Specifications</SectionHeader>
         <div className="mb-3">
@@ -1183,11 +1384,14 @@ function buildMaterialDescriptionRows(matDesc: string, finSize: string): Materia
   return [{ material: matDesc, sizes: finSize, colour: "" }];
 }
 
-function GarmentCart({ userEmail }: { userEmail: string }) {
+function GarmentCart({ userEmail, clients }: { userEmail: string; clients: ClientOption[] }) {
   const [today] = useState(() => todayLocalDateStr());
 
+  const [clientSearch, setClientSearch] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<number | "new" | "">("");
   const [cartClientName, setCartClientName] = useState("");
   const [cartClientPhone, setCartClientPhone] = useState("");
+  const [cartClientEmail, setCartClientEmail] = useState("");
   const [cartItems, setCartItems] = useState<GarmentCartItem[]>([]);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
@@ -1216,8 +1420,11 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
 
   function clearCart() {
     setCartItems([]);
+    setClientSearch("");
+    setSelectedClientId("");
     setCartClientName("");
     setCartClientPhone("");
+    setCartClientEmail("");
     setEditingIdx(null);
   }
 
@@ -1304,12 +1511,26 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
       setSubmitError("Sample is marked attached — enter who has it before submitting.");
       return;
     }
+    // Client-side convenience copy of the same case-insensitive check
+    // submitBatch runs server-side — see PressCart's identical check
+    // for the full reasoning.
+    if (selectedClientId === "new") {
+      const dup = clients.find((c) => c.name.trim().toLowerCase() === cartClientName.trim().toLowerCase());
+      if (dup) {
+        setSubmitError(
+          `A client named "${dup.name}" already exists (phone: ${dup.phone || "—"}). Select them from the client list instead, or adjust the name if this is a different client.`
+        );
+        return;
+      }
+    }
 
     const pgid = generateParentGroupId("GPG");
     const fd = new FormData();
     fd.set("pgid", pgid);
     fd.set("clientName", cartClientName);
     fd.set("clientPhone", cartClientPhone);
+    fd.set("isNewClient", String(selectedClientId === "new"));
+    fd.set("clientEmail", cartClientEmail);
     fd.set("items", JSON.stringify(cartItems));
     fd.set("sampleAttached", attachments.sampleAttached);
     fd.set("sampleWith", attachments.sampleWith);
@@ -1329,8 +1550,11 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
       setConfirmedBatch(result.submitted ?? []);
       if (result.warnings) setSubmitWarnings(result.warnings);
       setCartItems([]);
+      setClientSearch("");
+      setSelectedClientId("");
       setCartClientName("");
       setCartClientPhone("");
+      setCartClientEmail("");
       setEditingIdx(null);
       setAttachments(blankAttachmentsTerms());
     });
@@ -1362,24 +1586,19 @@ function GarmentCart({ userEmail }: { userEmail: string }) {
 
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
         <SectionHeader>Client Identity — Shared Across All Garment Items</SectionHeader>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Customer Name ★">
-            <input
-              type="text"
-              value={cartClientName}
-              onChange={(e) => setCartClientName(e.target.value)}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-          <FormField label="Telephone Number ★">
-            <input
-              type="text"
-              value={cartClientPhone}
-              onChange={(e) => setCartClientPhone(e.target.value)}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-        </div>
+        <ClientIdentitySection
+          clients={clients}
+          clientSearch={clientSearch}
+          setClientSearch={setClientSearch}
+          selectedClientId={selectedClientId}
+          setSelectedClientId={setSelectedClientId}
+          clientName={cartClientName}
+          setClientName={setCartClientName}
+          clientPhone={cartClientPhone}
+          setClientPhone={setCartClientPhone}
+          clientEmail={cartClientEmail}
+          setClientEmail={setCartClientEmail}
+        />
 
         <SectionHeader>Item Description &amp; Financial</SectionHeader>
         <div className="mb-3">
