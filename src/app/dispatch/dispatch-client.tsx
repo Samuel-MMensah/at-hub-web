@@ -91,9 +91,12 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
   function handleRecordPayment() {
     setError(null);
     startTransition(async () => {
-      // new deposit total = current deposit + this payment (cumulative,
-      // not the incremental amount — see actions.ts).
-      const result = await recordPayment(order.id, deposit + payAmt, receiptNo);
+      // recordPayment now takes the INCREMENTAL payment amount only —
+      // it re-fetches the real current deposit_amount server-side and
+      // computes the new cumulative total itself (fixed: previously
+      // this component computed deposit + payAmt and the action wrote
+      // that as-is, trusting whatever the client sent).
+      const result = await recordPayment(order.id, payAmt, receiptNo);
       if (result.error) setError(result.error);
     });
   }

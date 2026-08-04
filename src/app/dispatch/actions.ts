@@ -18,19 +18,52 @@ async function requireDispatchAccess() {
   return user;
 }
 
-// Mirrors dispatch.py's record_balance_payment(id, new_deposit_total):
-// newDepositTotal is the NEW CUMULATIVE deposit, not the incremental
-// payment — the caller (dispatch-client.tsx) computes deposit + payAmt
-// before calling this. Passing the raw payment amount here would
-// overwrite the deposit total instead of adding to it.
+// FIXED — previously took a client-computed newDepositTotal (deposit +
+// payAmt from dispatch-client.tsx) and wrote it as-is: no server-side
+// re-fetch of the real current deposit, no cap check against
+// total_amount. A live vulnerability in a page already in production
+// use, closed here the same way job_invoices' recordInvoicePayment was
+// fixed: take the INCREMENTAL payment amount only, re-fetch the real
+// current deposit_amount/total_amount through the caller's own
+// session, compute the new cumulative total from THAT (never from
+// anything the client sent), and reject outright — not silently
+// clamp — if it would push deposit_amount past total_amount. A second
+// payment recorded moments after the first can no longer be computed
+// from a stale client-held deposit value, and an overpayment can no
+// longer be written at all.
 export async function recordPayment(
   orderId: number,
-  newDepositTotal: number,
+  paymentAmount: number,
   receiptNo: string
 ): Promise<ActionResult> {
   await requireDispatchAccess();
 
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    return { error: "Payment amount must be greater than 0." };
+  }
+
   const supabase = await createClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("job_orders")
+    .select("deposit_amount, total_amount")
+    .eq("id", orderId)
+    .single();
+
+  if (fetchError || !current) {
+    return { error: fetchError?.message ?? "Order not found." };
+  }
+
+  const currentDeposit = Number(current.deposit_amount ?? 0);
+  const totalAmount = Number(current.total_amount ?? 0);
+  const newDepositTotal = currentDeposit + paymentAmount;
+
+  if (newDepositTotal > totalAmount) {
+    return {
+      error: `Payment of ${paymentAmount.toFixed(2)} exceeds the outstanding balance of ${(totalAmount - currentDeposit).toFixed(2)}.`,
+    };
+  }
+
   const { error } = await supabase
     .from("job_orders")
     .update({
