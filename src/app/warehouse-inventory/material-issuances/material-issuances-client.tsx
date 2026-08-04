@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
-import { recordIssuance } from "./actions";
+import { recordIssuance, updateIssuance } from "./actions";
 
 const CURRENCY = "GH₵";
 
@@ -26,6 +26,7 @@ export interface IssuanceRow {
   date: string;
   job_order_no: string | null;
   customer_name: string | null;
+  material_id: number;
   qty: number;
   unit_cost: number;
   total_cost: number;
@@ -34,6 +35,8 @@ export interface IssuanceRow {
   document: string | null;
   oracle_shipment_no: string | null;
   created_at: string;
+  edited_by: string | null;
+  edited_at: string | null;
   material_catalog: { material_description: string; uom: string | null } | null;
 }
 
@@ -107,6 +110,23 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Same subtle "not in its original state" indicator as Material
+// Receipts' EditedBadge — duplicated locally, not imported, matching
+// this codebase's established per-file small-component convention.
+function EditedBadge({ editedBy, editedAt }: { editedBy: string | null; editedAt: string | null }) {
+  if (!editedAt) return null;
+  const d = new Date(editedAt);
+  const short = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return (
+    <span
+      title={`Edited by ${editedBy ?? "unknown"} on ${d.toLocaleString()}`}
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-800"
+    >
+      edited {short}
+    </span>
+  );
+}
+
 export function MaterialIssuancesClient({
   materials,
   jobOrders,
@@ -122,9 +142,24 @@ export function MaterialIssuancesClient({
   );
   const currentKey = currentMonthKey();
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const editingIssuance = issuances.find((r) => r.id === editingId) ?? null;
+
+  function handleEditClick(id: number) {
+    setEditingId(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
     <div>
-      <IssuanceForm materials={materials} jobOrders={jobOrders} />
+      <IssuanceForm
+        key={editingIssuance?.id ?? "new"}
+        materials={materials}
+        jobOrders={jobOrders}
+        editingIssuance={editingIssuance}
+        onCancelEdit={() => setEditingId(null)}
+        onSaved={() => setEditingId(null)}
+      />
 
       <div className="mb-3 mt-8 flex items-center justify-between border-t-2 border-slate-100 pt-6">
         <div className="text-base font-bold text-at-navy">Issuance History</div>
@@ -164,6 +199,7 @@ export function MaterialIssuancesClient({
                       "Oracle Req #",
                       "Document",
                       "Oracle Shipment No.",
+                      "",
                     ].map((col) => (
                       <th
                         key={col}
@@ -179,7 +215,10 @@ export function MaterialIssuancesClient({
                 <tbody>
                   {month.items.map((r) => (
                     <tr key={r.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{r.date}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {r.date}
+                        <EditedBadge editedBy={r.edited_by} editedAt={r.edited_at} />
+                      </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-at-navy">
                         {r.material_catalog?.material_description ?? "—"}
                       </td>
@@ -198,6 +237,15 @@ export function MaterialIssuancesClient({
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">{r.oracle_req_no || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">{r.document || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">{r.oracle_shipment_no || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleEditClick(r.id)}
+                          className="text-xs font-semibold text-at-accent hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -210,26 +258,45 @@ export function MaterialIssuancesClient({
   );
 }
 
-function IssuanceForm({ materials, jobOrders }: { materials: MaterialOption[]; jobOrders: JobOrderOption[] }) {
+interface IssuanceFormProps {
+  materials: MaterialOption[];
+  jobOrders: JobOrderOption[];
+  editingIssuance?: IssuanceRow | null;
+  onCancelEdit?: () => void;
+  onSaved?: () => void;
+}
+
+// Reused for both create and edit, same pattern as Material Receipts'
+// ReceiptForm — the parent forces a remount (key={editingIssuance?.id
+// ?? "new"}) on selection change, so these useState initializers only
+// need to run once per "which row."
+function IssuanceForm({
+  materials,
+  jobOrders,
+  editingIssuance = null,
+  onCancelEdit,
+  onSaved,
+}: IssuanceFormProps) {
+  const isEditing = editingIssuance !== null;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(editingIssuance?.date ?? todayIso());
 
   const [orderSearch, setOrderSearch] = useState("");
-  const [selectedOrderNo, setSelectedOrderNo] = useState("");
-  const [customerName, setCustomerName] = useState("");
+  const [selectedOrderNo, setSelectedOrderNo] = useState(editingIssuance?.job_order_no ?? "");
+  const [customerName, setCustomerName] = useState(editingIssuance?.customer_name ?? "");
 
   const [materialSearch, setMaterialSearch] = useState("");
-  const [selectedMaterialId, setSelectedMaterialId] = useState<number | "">("");
+  const [selectedMaterialId, setSelectedMaterialId] = useState<number | "">(editingIssuance?.material_id ?? "");
 
-  const [qty, setQty] = useState<number | "">("");
-  const [unitCost, setUnitCost] = useState<number | "">("");
-  const [userDepartment, setUserDepartment] = useState("");
-  const [oracleReqNo, setOracleReqNo] = useState("");
-  const [document_, setDocument] = useState("");
-  const [oracleShipmentNo, setOracleShipmentNo] = useState("");
+  const [qty, setQty] = useState<number | "">(editingIssuance?.qty ?? "");
+  const [unitCost, setUnitCost] = useState<number | "">(editingIssuance?.unit_cost ?? "");
+  const [userDepartment, setUserDepartment] = useState(editingIssuance?.user_department ?? "");
+  const [oracleReqNo, setOracleReqNo] = useState(editingIssuance?.oracle_req_no ?? "");
+  const [document_, setDocument] = useState(editingIssuance?.document ?? "");
+  const [oracleShipmentNo, setOracleShipmentNo] = useState(editingIssuance?.oracle_shipment_no ?? "");
 
   const orderCandidates = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
@@ -284,21 +351,26 @@ function IssuanceForm({ materials, jobOrders }: { materials: MaterialOption[]; j
     }
     setError(null);
     setSuccess(null);
+    const input = {
+      date,
+      jobOrderNo: selectedOrderNo,
+      customerName,
+      materialId: selectedMaterialId,
+      qty,
+      unitCost,
+      userDepartment,
+      oracleReqNo,
+      document: document_,
+      oracleShipmentNo,
+    };
     startTransition(async () => {
-      const result = await recordIssuance({
-        date,
-        jobOrderNo: selectedOrderNo,
-        customerName,
-        materialId: selectedMaterialId,
-        qty,
-        unitCost,
-        userDepartment,
-        oracleReqNo,
-        document: document_,
-        oracleShipmentNo,
-      });
+      const result = isEditing
+        ? await updateIssuance(editingIssuance.id, input)
+        : await recordIssuance(input);
       if (result.error) {
         setError(result.error);
+      } else if (isEditing) {
+        onSaved?.();
       } else {
         setSuccess(
           `Issuance recorded: ${qty.toLocaleString()} × ${selectedMaterial?.material_description ?? "material"} against ${selectedOrderNo}.`
@@ -320,7 +392,20 @@ function IssuanceForm({ materials, jobOrders }: { materials: MaterialOption[]; j
 
   return (
     <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
-      <div className="mb-4 text-base font-bold text-at-navy">Record an Issuance</div>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-base font-bold text-at-navy">
+          {isEditing ? "Edit Issuance" : "Record an Issuance"}
+        </div>
+        {isEditing && (
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="text-xs font-semibold text-at-slate hover:text-at-navy"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
 
       <div className="mb-4">
         <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
@@ -488,7 +573,7 @@ function IssuanceForm({ materials, jobOrders }: { materials: MaterialOption[]; j
       {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
 
       <Button disabled={!canSubmit || isPending} onClick={handleSubmit}>
-        Record Issuance
+        {isEditing ? "Save Changes" : "Record Issuance"}
       </Button>
     </div>
   );

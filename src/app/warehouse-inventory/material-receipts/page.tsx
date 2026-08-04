@@ -35,7 +35,9 @@ export async function getReceiptHistory(): Promise<ReceiptRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("material_receipts")
-    .select("id, date, vendor_name, qty, unit_cost, total_cost, created_at, material_catalog(material_description, uom)")
+    .select(
+      "id, date, vendor_name, material_id, qty, unit_cost, total_cost, created_at, edited_by, edited_at, material_catalog(material_description, uom)"
+    )
     .order("date", { ascending: false });
   return (data ?? []) as unknown as ReceiptRow[];
 }

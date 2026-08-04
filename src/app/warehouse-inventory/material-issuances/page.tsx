@@ -47,7 +47,7 @@ export async function getIssuanceHistory(): Promise<IssuanceRow[]> {
   const { data } = await supabase
     .from("material_issuances")
     .select(
-      "id, date, job_order_no, customer_name, qty, unit_cost, total_cost, user_department, oracle_req_no, document, oracle_shipment_no, created_at, material_catalog(material_description, uom)"
+      "id, date, job_order_no, customer_name, material_id, qty, unit_cost, total_cost, user_department, oracle_req_no, document, oracle_shipment_no, created_at, edited_by, edited_at, material_catalog(material_description, uom)"
     )
     .order("date", { ascending: false });
   return (data ?? []) as unknown as IssuanceRow[];

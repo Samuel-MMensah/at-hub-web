@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
-import { recordReceipt } from "./actions";
+import { recordReceipt, updateReceipt } from "./actions";
 
 const CURRENCY = "GH₵";
 
@@ -19,10 +19,13 @@ export interface ReceiptRow {
   id: number;
   date: string;
   vendor_name: string | null;
+  material_id: number;
   qty: number;
   unit_cost: number;
   total_cost: number;
   created_at: string;
+  edited_by: string | null;
+  edited_at: string | null;
   material_catalog: { material_description: string; uom: string | null } | null;
 }
 
@@ -87,6 +90,23 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Small, subtle indicator that a row isn't in its original state —
+// title attribute carries the full precision (who + exact timestamp)
+// since the visible badge itself only has room for a short date.
+function EditedBadge({ editedBy, editedAt }: { editedBy: string | null; editedAt: string | null }) {
+  if (!editedAt) return null;
+  const d = new Date(editedAt);
+  const short = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return (
+    <span
+      title={`Edited by ${editedBy ?? "unknown"} on ${d.toLocaleString()}`}
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-800"
+    >
+      edited {short}
+    </span>
+  );
+}
+
 export function MaterialReceiptsClient({
   materials,
   receipts,
@@ -100,9 +120,23 @@ export function MaterialReceiptsClient({
   );
   const currentKey = currentMonthKey();
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const editingReceipt = receipts.find((r) => r.id === editingId) ?? null;
+
+  function handleEditClick(id: number) {
+    setEditingId(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
     <div>
-      <ReceiptForm materials={materials} />
+      <ReceiptForm
+        key={editingReceipt?.id ?? "new"}
+        materials={materials}
+        editingReceipt={editingReceipt}
+        onCancelEdit={() => setEditingId(null)}
+        onSaved={() => setEditingId(null)}
+      />
 
       <div className="mb-3 mt-8 flex items-center justify-between border-t-2 border-slate-100 pt-6">
         <div className="text-base font-bold text-at-navy">Receipt History</div>
@@ -130,11 +164,11 @@ export function MaterialReceiptsClient({
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-at-border bg-at-bg">
-                    {["Date", "Material", "Vendor", "Qty", "Unit Cost", "Total Cost"].map((col) => (
+                    {["Date", "Material", "Vendor", "Qty", "Unit Cost", "Total Cost", ""].map((col) => (
                       <th
                         key={col}
                         className={`whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate ${
-                          col === "Date" || col === "Material" || col === "Vendor" ? "" : "text-right"
+                          col === "Date" || col === "Material" || col === "Vendor" || col === "" ? "" : "text-right"
                         }`}
                       >
                         {col}
@@ -145,7 +179,10 @@ export function MaterialReceiptsClient({
                 <tbody>
                   {month.items.map((r) => (
                     <tr key={r.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{r.date}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {r.date}
+                        <EditedBadge editedBy={r.edited_by} editedAt={r.edited_at} />
+                      </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-at-navy">
                         {r.material_catalog?.material_description ?? "—"}
                       </td>
@@ -159,6 +196,15 @@ export function MaterialReceiptsClient({
                       <td className="whitespace-nowrap px-4 py-2.5 text-right font-bold text-at-navy">
                         {money(r.total_cost)}
                       </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleEditClick(r.id)}
+                          className="text-xs font-semibold text-at-accent hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -171,17 +217,32 @@ export function MaterialReceiptsClient({
   );
 }
 
-function ReceiptForm({ materials }: { materials: MaterialOption[] }) {
+interface ReceiptFormProps {
+  materials: MaterialOption[];
+  editingReceipt?: ReceiptRow | null;
+  onCancelEdit?: () => void;
+  onSaved?: () => void;
+}
+
+// Reused for both create and edit — not a second form component.
+// editingReceipt drives the pre-filled initial state; the parent
+// forces a remount (key={editingReceipt?.id ?? "new"}) whenever the
+// selected row changes, so this component's own useState initializers
+// only need to run once per "which row" rather than reacting to prop
+// changes themselves — same pattern already established for Archive's
+// OrderOperationsPanel and Phase 3.5's InvoicePaymentPanel.
+function ReceiptForm({ materials, editingReceipt = null, onCancelEdit, onSaved }: ReceiptFormProps) {
+  const isEditing = editingReceipt !== null;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [date, setDate] = useState(todayIso());
-  const [vendorName, setVendorName] = useState("");
+  const [date, setDate] = useState(editingReceipt?.date ?? todayIso());
+  const [vendorName, setVendorName] = useState(editingReceipt?.vendor_name ?? "");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<number | "">("");
-  const [qty, setQty] = useState<number | "">("");
-  const [unitCost, setUnitCost] = useState<number | "">("");
+  const [selectedId, setSelectedId] = useState<number | "">(editingReceipt?.material_id ?? "");
+  const [qty, setQty] = useState<number | "">(editingReceipt?.qty ?? "");
+  const [unitCost, setUnitCost] = useState<number | "">(editingReceipt?.unit_cost ?? "");
 
   const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -197,40 +258,59 @@ function ReceiptForm({ materials }: { materials: MaterialOption[] }) {
     const material = materials.find((m) => m.id === id);
     // Default to the catalog's cost, but this is a starting point, not a
     // hard rule — purchase costs fluctuate, so it stays editable below.
+    // Only auto-fills on a fresh pick here, not on initial mount in edit
+    // mode — the row's own real unit_cost (set above) is what should
+    // show first, not silently reset to today's catalog price.
     if (material) setUnitCost(material.unit_cost_ghc);
   }
 
   const canSubmit =
     date !== "" && selectedId !== "" && typeof qty === "number" && qty > 0 && typeof unitCost === "number" && unitCost >= 0;
 
+  function resetForm() {
+    setSelectedId("");
+    setSearch("");
+    setQty("");
+    setUnitCost("");
+    setVendorName("");
+    setDate(todayIso());
+  }
+
   function handleSubmit() {
     if (!canSubmit || typeof selectedId !== "number" || typeof qty !== "number" || typeof unitCost !== "number") return;
     setError(null);
     setSuccess(null);
     startTransition(async () => {
-      const result = await recordReceipt({
-        date,
-        vendorName,
-        materialId: selectedId,
-        qty,
-        unitCost,
-      });
+      const result = isEditing
+        ? await updateReceipt(editingReceipt.id, { date, vendorName, materialId: selectedId, qty, unitCost })
+        : await recordReceipt({ date, vendorName, materialId: selectedId, qty, unitCost });
       if (result.error) {
         setError(result.error);
+      } else if (isEditing) {
+        onSaved?.();
       } else {
         setSuccess(`Receipt recorded: ${qty.toLocaleString()} × ${selected?.material_description ?? "material"}.`);
-        setSelectedId("");
-        setSearch("");
-        setQty("");
-        setUnitCost("");
-        setVendorName("");
+        resetForm();
       }
     });
   }
 
   return (
     <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
-      <div className="mb-4 text-base font-bold text-at-navy">Record a Receipt</div>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-base font-bold text-at-navy">
+          {isEditing ? "Edit Receipt" : "Record a Receipt"}
+        </div>
+        {isEditing && (
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="text-xs font-semibold text-at-slate hover:text-at-navy"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -320,7 +400,7 @@ function ReceiptForm({ materials }: { materials: MaterialOption[] }) {
       {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
 
       <Button disabled={!canSubmit || isPending} onClick={handleSubmit}>
-        Record Receipt
+        {isEditing ? "Save Changes" : "Record Receipt"}
       </Button>
     </div>
   );

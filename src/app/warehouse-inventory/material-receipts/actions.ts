@@ -60,3 +60,46 @@ export async function recordReceipt(input: RecordReceiptInput): Promise<ActionRe
   revalidatePath("/warehouse-inventory/stock-balance");
   return {};
 }
+
+// Same input shape as recordReceipt, plus the row id being edited.
+// edited_by/edited_at are set here from the real caller's own session
+// (requireUser().email — never client-supplied), same "server is the
+// one place that computes what actually gets written" discipline as
+// recordInvoicePayment's balance math. stock_balance needs no separate
+// sync step here either — verified live in this task's own test, not
+// just assumed from "it's a view" the way the architecture note on
+// recordReceipt/recordIssuance already claims.
+export async function updateReceipt(id: number, input: RecordReceiptInput): Promise<ActionResult> {
+  const user = await requireMaterialReceiptsAccess();
+
+  if (!input.date) return { error: "Date is required." };
+  if (!input.materialId) return { error: "Select a material." };
+  if (!Number.isFinite(input.qty) || input.qty <= 0) {
+    return { error: "Quantity must be greater than 0." };
+  }
+  if (!Number.isFinite(input.unitCost) || input.unitCost < 0) {
+    return { error: "Unit cost cannot be negative." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("material_receipts")
+    .update({
+      date: input.date,
+      vendor_name: input.vendorName.trim() || null,
+      material_id: input.materialId,
+      qty: input.qty,
+      unit_cost: input.unitCost,
+      edited_by: user.email,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/warehouse-inventory/material-receipts");
+  revalidatePath("/warehouse-inventory/stock-balance");
+  return {};
+}

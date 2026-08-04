@@ -71,3 +71,48 @@ export async function recordIssuance(input: RecordIssuanceInput): Promise<Action
   revalidatePath("/warehouse-inventory/stock-balance");
   return {};
 }
+
+// Same input shape as recordIssuance, plus the row id being edited.
+// edited_by/edited_at come from the real caller's own session
+// (requireUser().email), never client-supplied. stock_balance needs no
+// separate sync step — verified live in this task's own test.
+export async function updateIssuance(id: number, input: RecordIssuanceInput): Promise<ActionResult> {
+  const user = await requireMaterialIssuancesAccess();
+
+  if (!input.date) return { error: "Date is required." };
+  if (!input.jobOrderNo) return { error: "Select an order." };
+  if (!input.materialId) return { error: "Select a material." };
+  if (!Number.isFinite(input.qty) || input.qty <= 0) {
+    return { error: "Quantity must be greater than 0." };
+  }
+  if (!Number.isFinite(input.unitCost) || input.unitCost < 0) {
+    return { error: "Unit cost cannot be negative." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("material_issuances")
+    .update({
+      date: input.date,
+      job_order_no: input.jobOrderNo,
+      customer_name: input.customerName.trim() || null,
+      material_id: input.materialId,
+      qty: input.qty,
+      unit_cost: input.unitCost,
+      user_department: input.userDepartment.trim() || null,
+      oracle_req_no: input.oracleReqNo.trim() || null,
+      document: input.document.trim() || null,
+      oracle_shipment_no: input.oracleShipmentNo.trim() || null,
+      edited_by: user.email,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/warehouse-inventory/material-issuances");
+  revalidatePath("/warehouse-inventory/stock-balance");
+  return {};
+}
