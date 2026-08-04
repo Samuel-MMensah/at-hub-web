@@ -29,7 +29,7 @@ export async function getInvoices(): Promise<InvoiceRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_invoices")
-    .select("id, date, revenue_category, invoice_total")
+    .select("id, date, revenue_category, business_unit, invoice_total, payment, balance")
     .order("date", { ascending: true });
   return (data ?? []) as InvoiceRow[];
 }

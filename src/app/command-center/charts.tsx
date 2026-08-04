@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import { weekStart } from "@/lib/week-groups";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import { DonutChart } from "@/components/ui/donut-chart";
 
 const CURRENCY = "GH₵";
 
@@ -466,57 +467,6 @@ function groupDepartmentPerformance(rows: DeptPerformanceRow[]): DeptStats[] {
   return [build("Press", press), build("Garment", garment)];
 }
 
-// Same donut technique as CapacityCharts' "Revenue by Job" pie above —
-// innerRadius/outerRadius/paddingAngle/Cell/Legend all identical.
-// Deliberately different from that one: the label shows the exact
-// formatted value AND the percentage (not percentage alone) — this
-// section is for a management presentation, not a compact dashboard
-// tile, so precision on the slice itself matters.
-function DepartmentDonut({
-  title,
-  data,
-  formatValue,
-}: {
-  title: string;
-  data: { name: string; value: number; color: string }[];
-  formatValue: (v: number) => string;
-}) {
-  return (
-    <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
-      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-at-slate">{title}</div>
-      <ResponsiveContainer width="100%" height={260}>
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            innerRadius="52%"
-            outerRadius="78%"
-            paddingAngle={2}
-            label={({ value, percent }: { value?: number; percent?: number }) =>
-              value != null && percent != null
-                ? `${formatValue(value)} (${(percent * 100).toFixed(0)}%)`
-                : ""
-            }
-            labelLine={false}
-          >
-            {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
-            ))}
-          </Pie>
-          <Tooltip content={<ChartTooltip valueFormatter={formatValue} />} />
-          <Legend
-            verticalAlign="bottom"
-            iconType="circle"
-            iconSize={8}
-            wrapperStyle={{ fontSize: 11, color: "#64748b" }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 // Deliberately a BROADER status scope than every other Command Center
 // chart on this page (which all read the `orders`/`jobs from getKpis()'s
 // ACTIVE_ORDER_STATUSES-filtered fetch) — this section reads its own
@@ -540,13 +490,9 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
       <SectionHeader>Departmental Performance</SectionHeader>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <DepartmentDonut title="Revenue" data={revenueData} formatValue={(v) => money(v, 2)} />
-        <DepartmentDonut title="Jobs" data={jobsData} formatValue={(v) => v.toLocaleString()} />
-        <DepartmentDonut
-          title="Collections"
-          data={collectionsData}
-          formatValue={(v) => money(v, 2)}
-        />
+        <DonutChart title="Revenue" data={revenueData} formatValue={(v) => money(v, 2)} />
+        <DonutChart title="Jobs" data={jobsData} formatValue={(v) => v.toLocaleString()} />
+        <DonutChart title="Collections" data={collectionsData} formatValue={(v) => money(v, 2)} />
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
