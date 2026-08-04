@@ -4,24 +4,10 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { submitBatch, resubmitOrder as resubmitOrderAction } from "./actions";
+import type { SalesRepOption } from "@/lib/sales-reps";
 
 const CURRENCY = "GH₵";
 
-// Ports SALES_REP_EMAILS' keys (app.py:126-136) — the dropdown only
-// ever shows/stores the NAME (a dict key), never the email; the email
-// lookup is a separate concern this route doesn't need.
-const SALES_REP_NAMES = [
-  "Mabel Ampofo",
-  "Daphne Sarpong",
-  "Reginald Aidam",
-  "Charles Adoo",
-  "Isaac Kum",
-  "Bertha Tackie",
-  "Christian Mante",
-  "Jacqueline Afful",
-  "Mohammed Seidu Bunyamin",
-  "Elizabeth Addo Obeng",
-];
 const SALES_REP_SENTINEL = "— None / Walk-in —";
 
 // Matches f"PG-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(1000,9999)}"
@@ -119,10 +105,12 @@ function AttachmentsAndTermsSection({
   state,
   setState,
   cartHasBalance,
+  salesReps,
 }: {
   state: AttachmentsTermsState;
   setState: React.Dispatch<React.SetStateAction<AttachmentsTermsState>>;
   cartHasBalance: boolean;
+  salesReps: SalesRepOption[];
 }) {
   return (
     <div className="mt-6">
@@ -184,9 +172,9 @@ function AttachmentsAndTermsSection({
             className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
           >
             <option value="">{SALES_REP_SENTINEL}</option>
-            {SALES_REP_NAMES.map((n) => (
-              <option key={n} value={n}>
-                {n}
+            {salesReps.map((r) => (
+              <option key={r.full_name} value={r.full_name}>
+                {r.full_name}
               </option>
             ))}
           </select>
@@ -447,10 +435,12 @@ export function RaiseOrderClient({
   userEmail,
   resubmitOrder,
   clients,
+  salesReps,
 }: {
   userEmail: string;
   resubmitOrder: ResubmitOrderData | null;
   clients: ClientOption[];
+  salesReps: SalesRepOption[];
 }) {
   const [department, setDepartment] = useState<"PRESS" | "GARMENT">("PRESS");
 
@@ -499,9 +489,9 @@ export function RaiseOrderClient({
       <div className="mb-4 text-lg font-bold text-at-navy-soft">{department} Job Order Entry</div>
 
       {department === "PRESS" ? (
-        <PressCart userEmail={userEmail} clients={clients} />
+        <PressCart userEmail={userEmail} clients={clients} salesReps={salesReps} />
       ) : (
-        <GarmentCart userEmail={userEmail} clients={clients} />
+        <GarmentCart userEmail={userEmail} clients={clients} salesReps={salesReps} />
       )}
     </div>
   );
@@ -633,7 +623,15 @@ function itemFormFromCartItem(item: PressCartItem): ItemFormState {
   };
 }
 
-function PressCart({ userEmail, clients }: { userEmail: string; clients: ClientOption[] }) {
+function PressCart({
+  userEmail,
+  clients,
+  salesReps,
+}: {
+  userEmail: string;
+  clients: ClientOption[];
+  salesReps: SalesRepOption[];
+}) {
   // Lazy initializer — same purity reasoning as every other Date-based
   // default in this codebase (GanttChart's `now`, Shop Floor's
   // todayLocalDateStr, Production Layout Builder's todayLocalDateStr).
@@ -1133,7 +1131,12 @@ function PressCart({ userEmail, clients }: { userEmail: string; clients: ClientO
             )}
           </div>
 
-          <AttachmentsAndTermsSection state={attachments} setState={setAttachments} cartHasBalance={cartHasBalance} />
+          <AttachmentsAndTermsSection
+            state={attachments}
+            setState={setAttachments}
+            cartHasBalance={cartHasBalance}
+            salesReps={salesReps}
+          />
 
           {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
           {submitWarnings.length > 0 &&
@@ -1389,7 +1392,15 @@ function buildMaterialDescriptionRows(matDesc: string, finSize: string): Materia
   return [{ material: matDesc, sizes: finSize, colour: "" }];
 }
 
-function GarmentCart({ userEmail, clients }: { userEmail: string; clients: ClientOption[] }) {
+function GarmentCart({
+  userEmail,
+  clients,
+  salesReps,
+}: {
+  userEmail: string;
+  clients: ClientOption[];
+  salesReps: SalesRepOption[];
+}) {
   const [today] = useState(() => todayLocalDateStr());
 
   const [clientSearch, setClientSearch] = useState("");
@@ -1913,7 +1924,12 @@ function GarmentCart({ userEmail, clients }: { userEmail: string; clients: Clien
             )}
           </div>
 
-          <AttachmentsAndTermsSection state={attachments} setState={setAttachments} cartHasBalance={cartHasBalance} />
+          <AttachmentsAndTermsSection
+            state={attachments}
+            setState={setAttachments}
+            cartHasBalance={cartHasBalance}
+            salesReps={salesReps}
+          />
 
           {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
           {submitWarnings.length > 0 &&

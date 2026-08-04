@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 import { recordInvoice, recordInvoicePayment } from "./actions";
+import type { SalesRepOption } from "@/lib/sales-reps";
 
 const CURRENCY = "GH₵";
 
@@ -21,28 +22,6 @@ const REVENUE_CATEGORIES = [
 // Uppercase, matching the real stored values / CHECK constraint —
 // not the title-case used earlier in conversation.
 const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY"] as const;
-
-// Same list Raise Job Order's cart forms use for job_orders.sales_rep
-// (raise-order-client.tsx) — duplicated here rather than cross-imported,
-// matching this codebase's per-file convention for small constants.
-// Deliberately NOT the 5 real Guest-role profiles: those are a subset
-// (Isaac Kum, Bertha Tackie, Christian Mante, Jacqueline Afful, and
-// Mohammed Seidu Bunyamin are real, currently-used attribution names
-// with no matching Guest login) — using profiles would silently drop
-// legitimate rep names AND make this form recognize a different rep
-// set than Raise Job Order does for the same real people.
-const SALES_REP_NAMES = [
-  "Mabel Ampofo",
-  "Daphne Sarpong",
-  "Reginald Aidam",
-  "Charles Adoo",
-  "Isaac Kum",
-  "Bertha Tackie",
-  "Christian Mante",
-  "Jacqueline Afful",
-  "Mohammed Seidu Bunyamin",
-  "Elizabeth Addo Obeng",
-];
 
 export interface JobOrderOption {
   job_order_no: string;
@@ -99,10 +78,12 @@ export function InvoiceEntryClient({
   jobOrders,
   invoices,
   clients,
+  salesReps,
 }: {
   jobOrders: JobOrderOption[];
   invoices: InvoiceRow[];
   clients: ClientOption[];
+  salesReps: SalesRepOption[];
 }) {
   const monthGroups: MonthGroup<InvoiceRow>[] = useMemo(
     () => groupByMonth(invoices, (r) => parseDateOnly(r.date)),
@@ -112,7 +93,7 @@ export function InvoiceEntryClient({
 
   return (
     <div>
-      <InvoiceForm jobOrders={jobOrders} clients={clients} />
+      <InvoiceForm jobOrders={jobOrders} clients={clients} salesReps={salesReps} />
 
       <RecordPaymentSection invoices={invoices} />
 
@@ -204,7 +185,15 @@ export function InvoiceEntryClient({
   );
 }
 
-function InvoiceForm({ jobOrders, clients }: { jobOrders: JobOrderOption[]; clients: ClientOption[] }) {
+function InvoiceForm({
+  jobOrders,
+  clients,
+  salesReps,
+}: {
+  jobOrders: JobOrderOption[];
+  clients: ClientOption[];
+  salesReps: SalesRepOption[];
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -437,9 +426,9 @@ function InvoiceForm({ jobOrders, clients }: { jobOrders: JobOrderOption[]; clie
             className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
           >
             <option value="">— None / Walk-in —</option>
-            {SALES_REP_NAMES.map((n) => (
-              <option key={n} value={n}>
-                {n}
+            {salesReps.map((r) => (
+              <option key={r.full_name} value={r.full_name}>
+                {r.full_name}
               </option>
             ))}
           </select>

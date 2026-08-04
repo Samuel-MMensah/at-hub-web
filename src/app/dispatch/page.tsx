@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, FINANCE_ROLES, hasRole } from "@/lib/nav-config";
 import { getInvoices } from "@/app/revenue-analysis/page";
 import { getJobOrderOptions, getInvoiceHistory, getClientOptions } from "@/app/revenue-analysis/invoice-entry/page";
+import { getSalesReps } from "@/lib/sales-reps";
 import { DispatchTabs } from "./dispatch-tabs";
 import type { DispatchOrderRow } from "./dispatch-client";
 
@@ -46,9 +47,16 @@ export default async function DispatchPage() {
   // consolidation this task didn't ask for, unlike Warehouse's
   // materials fetch reuse, which was the exact same query needed by
   // two tabs).
-  const [orders, revenueInvoices, jobOrders, invoices, clients] = allowed
-    ? await Promise.all([getDispatchOrders(), getInvoices(), getJobOrderOptions(), getInvoiceHistory(), getClientOptions()])
-    : [[], [], [], [], []];
+  const [orders, revenueInvoices, jobOrders, invoices, clients, salesReps] = allowed
+    ? await Promise.all([
+        getDispatchOrders(),
+        getInvoices(),
+        getJobOrderOptions(),
+        getInvoiceHistory(),
+        getClientOptions(),
+        getSalesReps(),
+      ])
+    : [[], [], [], [], [], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -68,6 +76,7 @@ export default async function DispatchPage() {
           jobOrders={jobOrders}
           invoices={invoices}
           clients={clients}
+          salesReps={salesReps}
         />
       )}
     </AppShell>

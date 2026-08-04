@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, RAISE_ORDER_ROLES, hasRole } from "@/lib/nav-config";
 import { RaiseOrderClient, type ResubmitOrderData, type ClientOption } from "./raise-order-client";
+import { getSalesReps } from "@/lib/sales-reps";
 
 // Hand-off from My Order Tracker's "Modify & Resubmit" link
 // (order-tracker-client.tsx): /raise-order?resubmit={id}. Matches how
@@ -55,7 +56,8 @@ export default async function RaiseOrderPage({
     allowed && resubmitId !== null && !Number.isNaN(resubmitId)
       ? await getResubmitOrder(resubmitId, user.email)
       : null;
-  const clients = allowed && !resubmitOrder ? await getClients() : [];
+  const [clients, salesReps] =
+    allowed && !resubmitOrder ? await Promise.all([getClients(), getSalesReps()]) : [[], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -73,7 +75,12 @@ export default async function RaiseOrderPage({
             </div>
           )}
 
-          <RaiseOrderClient userEmail={user.email} resubmitOrder={resubmitOrder} clients={clients} />
+          <RaiseOrderClient
+            userEmail={user.email}
+            resubmitOrder={resubmitOrder}
+            clients={clients}
+            salesReps={salesReps}
+          />
         </>
       )}
     </AppShell>

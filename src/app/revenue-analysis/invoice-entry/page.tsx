@@ -10,6 +10,7 @@ import {
   type InvoiceRow,
   type ClientOption,
 } from "./invoice-entry-client";
+import { getSalesReps } from "@/lib/sales-reps";
 
 // Deliberately no .eq("status", ...) filter — same confirmed decision
 // as Material Issuance's order picker: orders move through statuses
@@ -53,9 +54,9 @@ export default async function InvoiceEntryPage() {
   const user = await requireUser();
   const allowed = hasRole(user.role, [...ADMIN_ROLES, ...FINANCE_ROLES]);
 
-  const [jobOrders, invoices, clients] = allowed
-    ? await Promise.all([getJobOrderOptions(), getInvoiceHistory(), getClientOptions()])
-    : [[], [], []];
+  const [jobOrders, invoices, clients, salesReps] = allowed
+    ? await Promise.all([getJobOrderOptions(), getInvoiceHistory(), getClientOptions(), getSalesReps()])
+    : [[], [], [], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -72,7 +73,7 @@ export default async function InvoiceEntryPage() {
       {!allowed ? (
         <RestrictedAccess message="Invoice Entry is reserved for finance staff and administrators." />
       ) : (
-        <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} />
+        <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} salesReps={salesReps} />
       )}
     </AppShell>
   );
