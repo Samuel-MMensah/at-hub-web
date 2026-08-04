@@ -6,6 +6,10 @@ export interface AuthUser {
   fullName: string;
   role: string;
   department: string;
+  // Orthogonal to role — a sales rep can hold any role (Guest, Front
+  // Desk, md, ...), confirmed live during the clients-subsystem sales
+  // rep task. Gates /my-sales-dashboard.
+  isSalesRep: boolean;
 }
 
 export async function requireUser(): Promise<AuthUser> {
@@ -21,7 +25,7 @@ export async function requireUser(): Promise<AuthUser> {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("full_name, role, department")
+    .select("full_name, role, department, is_sales_rep")
     .eq("id", user.id)
     .single();
 
@@ -32,6 +36,7 @@ export async function requireUser(): Promise<AuthUser> {
       fullName: user.email,
       role: "Front Desk",
       department: "NONE",
+      isSalesRep: false,
     };
   }
 
@@ -40,5 +45,6 @@ export async function requireUser(): Promise<AuthUser> {
     fullName: profile.full_name ?? user.email,
     role: profile.role ?? "Front Desk",
     department: profile.department ?? "NONE",
+    isSalesRep: profile.is_sales_rep ?? false,
   };
 }
