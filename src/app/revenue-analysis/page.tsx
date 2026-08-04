@@ -20,7 +20,12 @@ import { RevenueAnalysisClient, type InvoiceRow } from "./revenue-analysis-clien
 // Balance's stock_balance view: this table doesn't have a live,
 // per-row-growing running balance that needs DB-side incremental
 // aggregation at scale — it's a fixed reporting query over ~172 rows.
-async function getInvoices(): Promise<InvoiceRow[]> {
+// Exported so Dispatch's tabbed page (src/app/dispatch/page.tsx) can
+// reuse this exact query instead of duplicating it — Phase 4 wires
+// this standalone route's content into a Dispatch tab without moving
+// or rebuilding it. This route itself is untouched and still works at
+// its own URL.
+export async function getInvoices(): Promise<InvoiceRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_invoices")

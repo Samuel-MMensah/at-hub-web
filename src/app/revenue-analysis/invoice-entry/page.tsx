@@ -14,7 +14,9 @@ import {
 // as Material Issuance's order picker: orders move through statuses
 // over time, restricting the picker now would just need revisiting
 // later.
-async function getJobOrderOptions(): Promise<JobOrderOption[]> {
+// Exported: reused by Dispatch's tabbed page (Phase 4) — this route is
+// otherwise untouched and still works standalone at its own URL.
+export async function getJobOrderOptions(): Promise<JobOrderOption[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_orders")
@@ -23,7 +25,7 @@ async function getJobOrderOptions(): Promise<JobOrderOption[]> {
   return (data ?? []) as JobOrderOption[];
 }
 
-async function getInvoiceHistory(): Promise<InvoiceRow[]> {
+export async function getInvoiceHistory(): Promise<InvoiceRow[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_invoices")

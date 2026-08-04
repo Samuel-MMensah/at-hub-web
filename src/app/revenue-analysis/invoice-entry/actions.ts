@@ -111,3 +111,66 @@ export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionRe
   revalidatePath("/revenue-analysis");
   return {};
 }
+
+// Deliberately does NOT take the caller's idea of "current payment" or
+// a pre-computed new balance — unlike Dispatch's recordPayment (which
+// trusts the client's deposit + payAmt sum with NO server-side re-fetch
+// or cap check at all — confirmed the same class of gap exists there
+// too, see MIGRATION_STATUS.md / the task this shipped in for the
+// explicit flag), this re-fetches the real current row through the
+// caller's own session first and computes the new cumulative
+// payment/balance from THAT, per explicit instruction ("recomputed
+// server-side, never client-trusted"). A second payment recorded
+// moments after the first can't be computed from a stale client-held
+// balance this way.
+//
+// The re-fetch alone isn't the safety boundary — an overpayment
+// submitted against a real, freshly-fetched balance would still be
+// accepted without this explicit check. Rejected outright, not
+// clamped: this app's own convention (job_orders/job_invoices' balance
+// is deliberately never clamped to zero at read time — see Dispatch's
+// `balance = total - deposit`, unclamped) means a silent server-side
+// clamp here would be the one place balance math got force-corrected
+// instead of surfaced, inconsistent with that convention.
+export async function recordInvoicePayment(invoiceId: number, paymentAmount: number): Promise<ActionResult> {
+  await requireInvoiceEntryAccess();
+
+  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+    return { error: "Payment amount must be greater than 0." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("job_invoices")
+    .select("payment, invoice_total")
+    .eq("id", invoiceId)
+    .single();
+
+  if (fetchError || !current) {
+    return { error: fetchError?.message ?? "Invoice not found." };
+  }
+
+  const currentBalance = current.invoice_total - current.payment;
+  if (paymentAmount > currentBalance) {
+    return {
+      error: `Payment of ${paymentAmount.toFixed(2)} exceeds the outstanding balance of ${currentBalance.toFixed(2)}.`,
+    };
+  }
+
+  const newPayment = current.payment + paymentAmount;
+  const newBalance = current.invoice_total - newPayment;
+
+  const { error } = await supabase
+    .from("job_invoices")
+    .update({ payment: newPayment, balance: newBalance })
+    .eq("id", invoiceId);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/revenue-analysis/invoice-entry");
+  revalidatePath("/revenue-analysis");
+  return {};
+}

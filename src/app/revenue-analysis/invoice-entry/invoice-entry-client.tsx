@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
-import { recordInvoice } from "./actions";
+import { recordInvoice, recordInvoicePayment } from "./actions";
 
 const CURRENCY = "GH₵";
 
@@ -80,6 +80,8 @@ export function InvoiceEntryClient({
   return (
     <div>
       <InvoiceForm jobOrders={jobOrders} />
+
+      <RecordPaymentSection invoices={invoices} />
 
       <div className="mb-3 mt-8 border-t-2 border-slate-100 pt-6 text-base font-bold text-at-navy">
         Invoice History
@@ -492,6 +494,141 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
       <Button disabled={!canSubmit || isPending} onClick={handleSubmit}>
         Record Invoice
       </Button>
+    </div>
+  );
+}
+
+// Search+select over EXISTING invoices, same pattern as Archive's
+// ManageArchivedOrders (archive-client.tsx) — search box narrowing a
+// dropdown of candidates from data already fetched for the history
+// table above (no new query), select one to open its payment panel.
+// Keyed by `id` (a real unique PK), not job_order_no like Archive's
+// version — most job_invoices rows have no job_order_no at all
+// (172 imported historical rows, all NULL), and even linked ones
+// aren't guaranteed unique per order in this table the way Archive's
+// source table happens to be.
+function RecordPaymentSection({ invoices }: { invoices: InvoiceRow[] }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<number | "">("");
+
+  const candidates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return invoices;
+    return invoices.filter((inv) => {
+      const customer = (inv.customer_name ?? "").toLowerCase();
+      const orderNo = (inv.job_order_no ?? "").toLowerCase();
+      return customer.includes(q) || orderNo.includes(q);
+    });
+  }, [invoices, search]);
+
+  const target = selectedId === "" ? null : invoices.find((inv) => inv.id === selectedId) ?? null;
+
+  return (
+    <div className="mt-8 border-t-2 border-slate-100 pt-6">
+      <div className="mb-3 text-base font-bold text-at-navy">Record Payment</div>
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by customer name or order number"
+        className="mb-3 w-full rounded-at border border-at-border bg-at-white px-4 py-2.5 text-sm text-at-navy outline-none focus:border-at-accent"
+      />
+
+      <select
+        value={selectedId}
+        onChange={(e) => setSelectedId(e.target.value === "" ? "" : Number(e.target.value))}
+        className="w-full max-w-xl rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+      >
+        <option value="">— Select an invoice —</option>
+        {candidates.map((inv) => (
+          <option key={inv.id} value={inv.id}>
+            {inv.date} — {inv.customer_name || "—"}
+            {inv.job_order_no ? ` (${inv.job_order_no})` : ""} · Balance {money(inv.balance)}
+          </option>
+        ))}
+      </select>
+
+      {candidates.length === 0 && <div className="mt-3 text-sm text-at-slate">No invoices match your search.</div>}
+
+      {target && <InvoicePaymentPanel key={target.id} invoice={target} />}
+    </div>
+  );
+}
+
+// Payment Amount input matches Dispatch's DispatchOrderCard field
+// exactly: min={0.01}, max={balance}, step={50}, initial value =
+// balance (full outstanding amount pre-filled), same disabled
+// condition. `useState(balance)` only re-initializes on remount
+// (forced by the parent's key={target.id} when a DIFFERENT invoice is
+// selected) — recording a second payment on the SAME invoice without
+// reselecting it has the same pre-fill staleness Dispatch's own cards
+// already have; not a new rough edge introduced here, matching the
+// cited precedent exactly rather than silently improving on it.
+function InvoicePaymentPanel({ invoice }: { invoice: InvoiceRow }) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [payAmt, setPayAmt] = useState(invoice.balance);
+
+  const balance = invoice.balance;
+
+  function handleRecordPayment() {
+    setError(null);
+    setSuccess(null);
+    startTransition(async () => {
+      const result = await recordInvoicePayment(invoice.id, payAmt);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setSuccess(`Payment of ${money(payAmt)} recorded.`);
+      }
+    });
+  }
+
+  return (
+    <div className="mt-4 rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
+      <div className="mb-4 text-sm font-bold text-at-navy">
+        Invoice: {invoice.customer_name || "—"} — {invoice.date}
+      </div>
+
+      <div className="mb-3">
+        <div className="text-xs text-at-slate">Outstanding Balance</div>
+        <div className="text-xl font-extrabold" style={{ color: balance > 0 ? "#ef4444" : "#10b981" }}>
+          {money(balance)}
+        </div>
+      </div>
+
+      {balance > 0 ? (
+        <>
+          <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div>
+              <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                Payment Amount
+              </label>
+              <input
+                type="number"
+                min={0.01}
+                max={balance}
+                step={50}
+                value={payAmt}
+                onChange={(e) => setPayAmt(Number(e.target.value))}
+                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+              />
+            </div>
+            <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
+              Record Payment
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div className="inline-block rounded-md border border-green-200 bg-green-50 px-3.5 py-2 text-sm font-semibold text-green-800">
+          Fully paid.
+        </div>
+      )}
+
+      {error && <div className="mt-3 text-sm font-semibold text-red-600">{error}</div>}
+      {success && <div className="mt-3 text-sm font-semibold text-emerald-600">{success}</div>}
     </div>
   );
 }
