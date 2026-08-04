@@ -8,6 +8,7 @@ import {
   InvoiceEntryClient,
   type JobOrderOption,
   type InvoiceRow,
+  type ClientOption,
 } from "./invoice-entry-client";
 
 // Deliberately no .eq("status", ...) filter — same confirmed decision
@@ -16,13 +17,25 @@ import {
 // later.
 // Exported: reused by Dispatch's tabbed page (Phase 4) — this route is
 // otherwise untouched and still works standalone at its own URL.
+// client_id added in Phase 3 — the real FK, so the form can auto-fill
+// it directly off a selected order instead of a name match.
 export async function getJobOrderOptions(): Promise<JobOrderOption[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_orders")
-    .select("job_order_no, customer_name, status, qty_to_print, total_amount")
+    .select("job_order_no, customer_name, status, qty_to_print, total_amount, client_id")
     .order("job_order_no", { ascending: true });
   return (data ?? []) as JobOrderOption[];
+}
+
+// Phase 3 of the clients subsystem — feeds Invoice Entry's own client
+// picker, shown only for standalone (no linked job_order) invoices.
+// Exported for the same reason as getJobOrderOptions/getInvoiceHistory
+// above: reused by Dispatch's tabbed page (dispatch/page.tsx).
+export async function getClientOptions(): Promise<ClientOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("clients").select("id, name, phone, email").order("name", { ascending: true });
+  return (data ?? []) as ClientOption[];
 }
 
 export async function getInvoiceHistory(): Promise<InvoiceRow[]> {
@@ -40,9 +53,9 @@ export default async function InvoiceEntryPage() {
   const user = await requireUser();
   const allowed = hasRole(user.role, [...ADMIN_ROLES, ...FINANCE_ROLES]);
 
-  const [jobOrders, invoices] = allowed
-    ? await Promise.all([getJobOrderOptions(), getInvoiceHistory()])
-    : [[], []];
+  const [jobOrders, invoices, clients] = allowed
+    ? await Promise.all([getJobOrderOptions(), getInvoiceHistory(), getClientOptions()])
+    : [[], [], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -59,7 +72,7 @@ export default async function InvoiceEntryPage() {
       {!allowed ? (
         <RestrictedAccess message="Invoice Entry is reserved for finance staff and administrators." />
       ) : (
-        <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} />
+        <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} />
       )}
     </AppShell>
   );

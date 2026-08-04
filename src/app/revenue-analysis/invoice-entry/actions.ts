@@ -33,6 +33,8 @@ export interface RecordInvoiceInput {
   date: string;
   jobOrderNo: string | null;
   customerName: string;
+  clientId: number | null;
+  salesRep: string | null;
   productDescription: string;
   revenueCategory: string;
   businessUnit: string;
@@ -84,10 +86,36 @@ export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionRe
   const balance = invoiceTotal - input.payment;
 
   const supabase = await createClient();
+
+  // Phase 3: client_id / sales_rep. When a job order is linked, both
+  // values are re-derived server-side from that order's own row
+  // rather than trusted from the client — client_id because the
+  // browser's copy of job_orders could be stale (another tab/session
+  // relinked the order's client in between), and sales_rep because it
+  // must be null whenever job_order_no is set regardless of what the
+  // form sent (sales_rep_only_when_unlinked enforces this at the DB
+  // level too — this is defense in depth, not the only gate).
+  let clientId = input.clientId;
+  let salesRep = input.salesRep;
+  if (input.jobOrderNo) {
+    const { data: order, error: orderLookupError } = await supabase
+      .from("job_orders")
+      .select("client_id")
+      .eq("job_order_no", input.jobOrderNo)
+      .single();
+    if (orderLookupError || !order) {
+      return { error: orderLookupError?.message ?? "Linked job order not found." };
+    }
+    clientId = order.client_id;
+    salesRep = null;
+  }
+
   const { error } = await supabase.from("job_invoices").insert({
     job_order_no: input.jobOrderNo || null,
     date: input.date,
     customer_name: input.customerName.trim() || null,
+    client_id: clientId,
+    sales_rep: salesRep,
     product_description: input.productDescription.trim() || null,
     revenue_category: input.revenueCategory,
     business_unit: input.businessUnit,

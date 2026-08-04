@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, FINANCE_ROLES, hasRole } from "@/lib/nav-config";
 import { getInvoices } from "@/app/revenue-analysis/page";
-import { getJobOrderOptions, getInvoiceHistory } from "@/app/revenue-analysis/invoice-entry/page";
+import { getJobOrderOptions, getInvoiceHistory, getClientOptions } from "@/app/revenue-analysis/invoice-entry/page";
 import { DispatchTabs } from "./dispatch-tabs";
 import type { DispatchOrderRow } from "./dispatch-client";
 
@@ -46,9 +46,9 @@ export default async function DispatchPage() {
   // consolidation this task didn't ask for, unlike Warehouse's
   // materials fetch reuse, which was the exact same query needed by
   // two tabs).
-  const [orders, revenueInvoices, jobOrders, invoices] = allowed
-    ? await Promise.all([getDispatchOrders(), getInvoices(), getJobOrderOptions(), getInvoiceHistory()])
-    : [[], [], [], []];
+  const [orders, revenueInvoices, jobOrders, invoices, clients] = allowed
+    ? await Promise.all([getDispatchOrders(), getInvoices(), getJobOrderOptions(), getInvoiceHistory(), getClientOptions()])
+    : [[], [], [], [], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
@@ -62,7 +62,13 @@ export default async function DispatchPage() {
       {!allowed ? (
         <RestrictedAccess message="Dispatch is reserved for managers and administrators." />
       ) : (
-        <DispatchTabs orders={orders} revenueInvoices={revenueInvoices} jobOrders={jobOrders} invoices={invoices} />
+        <DispatchTabs
+          orders={orders}
+          revenueInvoices={revenueInvoices}
+          jobOrders={jobOrders}
+          invoices={invoices}
+          clients={clients}
+        />
       )}
     </AppShell>
   );

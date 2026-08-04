@@ -86,6 +86,7 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   const clientPhone = String(formData.get("clientPhone") ?? "").trim();
   const isNewClient = formData.get("isNewClient") === "true";
   const clientEmail = String(formData.get("clientEmail") ?? "").trim();
+  const clientIdRaw = String(formData.get("clientId") ?? "").trim();
   const itemsJson = String(formData.get("items") ?? "[]");
   const sampleAttached = String(formData.get("sampleAttached") ?? "No");
   const sampleWith = String(formData.get("sampleWith") ?? "").trim();
@@ -101,6 +102,13 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   if (sampleAttached === "Yes" && !sampleWith) {
     return { error: "Sample is marked attached — enter who has it before submitting." };
   }
+  // Phase 3: client_id is required either way — for an existing
+  // selection it must come straight from the picker (never re-derived
+  // from a name match), for "New Client" it's resolved below once that
+  // row is actually created.
+  if (!isNewClient && (!clientIdRaw || Number.isNaN(Number(clientIdRaw)))) {
+    return { error: "Select a client before submitting the batch." };
+  }
 
   let items: Record<string, unknown>[];
   try {
@@ -113,6 +121,11 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   }
 
   const supabase = await createClient();
+
+  // Resolved below: either the picker's own selection (existing
+  // client) or the id of the row created just under this, for "New
+  // Client." Never re-derived from customer_name after the fact.
+  let resolvedClientId: number = Number(clientIdRaw);
 
   // Phase 2 of the clients subsystem: the client picker's "+ New
   // Client" path lands here. Real gate against the duplicate-name
@@ -168,6 +181,7 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
     if (insertClientError || !newClient) {
       return { error: `Could not create client: ${insertClientError?.message ?? "unknown error"}` };
     }
+    resolvedClientId = newClient.id;
   }
 
   const lpoFileEntry = formData.get("lpoFile");
@@ -210,6 +224,7 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
       ...dbFields,
       customer_name: clientName,
       telephone_number: clientPhone,
+      client_id: resolvedClientId,
       parent_group_id: pgid,
       status: "Pending Approval",
       // Matches My Order Tracker's created_by-by-email convention.

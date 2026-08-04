@@ -10,6 +10,7 @@ import {
   InvoiceEntryClient,
   type JobOrderOption,
   type InvoiceRow,
+  type ClientOption,
 } from "@/app/revenue-analysis/invoice-entry/invoice-entry-client";
 
 type TabKey = "dispatch" | "revenue-analysis" | "invoice-entry";
@@ -25,6 +26,7 @@ interface DispatchTabsProps {
   revenueInvoices: RevenueInvoiceRow[];
   jobOrders: JobOrderOption[];
   invoices: InvoiceRow[];
+  clients: ClientOption[];
 }
 
 // Single tab shell for all three — same architecture as
@@ -46,7 +48,7 @@ interface DispatchTabsProps {
 // Receiving content was inline JSX in the Server Component and had to
 // be extracted into a new ReceivingTab function here). Reused as-is,
 // nothing relocated or rebuilt.
-export function DispatchTabs({ orders, revenueInvoices, jobOrders, invoices }: DispatchTabsProps) {
+export function DispatchTabs({ orders, revenueInvoices, jobOrders, invoices, clients }: DispatchTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("dispatch");
 
   return (
@@ -77,7 +79,9 @@ export function DispatchTabs({ orders, revenueInvoices, jobOrders, invoices }: D
           <DispatchClient orders={orders} />
         ))}
       {activeTab === "revenue-analysis" && <RevenueAnalysisClient invoices={revenueInvoices} />}
-      {activeTab === "invoice-entry" && <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} />}
+      {activeTab === "invoice-entry" && (
+        <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} />
+      )}
     </div>
   );
 }

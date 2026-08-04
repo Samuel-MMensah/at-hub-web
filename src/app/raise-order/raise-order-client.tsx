@@ -796,6 +796,11 @@ function PressCart({ userEmail, clients }: { userEmail: string; clients: ClientO
     fd.set("clientName", cartClientName);
     fd.set("clientPhone", cartClientPhone);
     fd.set("isNewClient", String(selectedClientId === "new"));
+    // Phase 3: the real client_id, sent directly from the picker's own
+    // selection rather than relying on a later name-match backfill.
+    // Empty when "New Client" was used — the server creates that
+    // client and uses ITS id instead (see submitBatch).
+    fd.set("clientId", typeof selectedClientId === "number" ? String(selectedClientId) : "");
     fd.set("clientEmail", cartClientEmail);
     fd.set("items", JSON.stringify(cartItems));
     fd.set("sampleAttached", attachments.sampleAttached);
@@ -1530,6 +1535,11 @@ function GarmentCart({ userEmail, clients }: { userEmail: string; clients: Clien
     fd.set("clientName", cartClientName);
     fd.set("clientPhone", cartClientPhone);
     fd.set("isNewClient", String(selectedClientId === "new"));
+    // Phase 3: the real client_id, sent directly from the picker's own
+    // selection rather than relying on a later name-match backfill.
+    // Empty when "New Client" was used — the server creates that
+    // client and uses ITS id instead (see submitBatch).
+    fd.set("clientId", typeof selectedClientId === "number" ? String(selectedClientId) : "");
     fd.set("clientEmail", cartClientEmail);
     fd.set("items", JSON.stringify(cartItems));
     fd.set("sampleAttached", attachments.sampleAttached);

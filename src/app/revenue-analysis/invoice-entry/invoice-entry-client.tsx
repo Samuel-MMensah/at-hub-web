@@ -22,12 +22,43 @@ const REVENUE_CATEGORIES = [
 // not the title-case used earlier in conversation.
 const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY"] as const;
 
+// Same list Raise Job Order's cart forms use for job_orders.sales_rep
+// (raise-order-client.tsx) — duplicated here rather than cross-imported,
+// matching this codebase's per-file convention for small constants.
+// Deliberately NOT the 5 real Guest-role profiles: those are a subset
+// (Isaac Kum, Bertha Tackie, Christian Mante, Jacqueline Afful, and
+// Mohammed Seidu Bunyamin are real, currently-used attribution names
+// with no matching Guest login) — using profiles would silently drop
+// legitimate rep names AND make this form recognize a different rep
+// set than Raise Job Order does for the same real people.
+const SALES_REP_NAMES = [
+  "Mabel Ampofo",
+  "Daphne Sarpong",
+  "Reginald Aidam",
+  "Charles Adoo",
+  "Isaac Kum",
+  "Bertha Tackie",
+  "Christian Mante",
+  "Jacqueline Afful",
+  "Mohammed Seidu Bunyamin",
+  "Elizabeth Addo Obeng",
+];
+
 export interface JobOrderOption {
   job_order_no: string;
   customer_name: string;
   status: string | null;
   qty_to_print: number | null;
   total_amount: number | null;
+  client_id: number | null;
+}
+
+// Phase 1/2's clients table — identity/contact only, no ownership.
+export interface ClientOption {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
 }
 
 export interface InvoiceRow {
@@ -67,9 +98,11 @@ function todayIso(): string {
 export function InvoiceEntryClient({
   jobOrders,
   invoices,
+  clients,
 }: {
   jobOrders: JobOrderOption[];
   invoices: InvoiceRow[];
+  clients: ClientOption[];
 }) {
   const monthGroups: MonthGroup<InvoiceRow>[] = useMemo(
     () => groupByMonth(invoices, (r) => parseDateOnly(r.date)),
@@ -79,7 +112,7 @@ export function InvoiceEntryClient({
 
   return (
     <div>
-      <InvoiceForm jobOrders={jobOrders} />
+      <InvoiceForm jobOrders={jobOrders} clients={clients} />
 
       <RecordPaymentSection invoices={invoices} />
 
@@ -171,7 +204,7 @@ export function InvoiceEntryClient({
   );
 }
 
-function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
+function InvoiceForm({ jobOrders, clients }: { jobOrders: JobOrderOption[]; clients: ClientOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -192,6 +225,16 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
   const [status, setStatus] = useState<string>("");
   const [oracleNo, setOracleNo] = useState("");
 
+  // Phase 3: client_id (real FK) + sales_rep. sales_rep is ONLY
+  // meaningful/shown when this invoice is standalone (no linked job
+  // order) — a linked invoice's attribution comes from that order's
+  // own sales_rep via the join, never a second copy here, enforced by
+  // the sales_rep_only_when_unlinked CHECK constraint (and re-checked
+  // server-side in recordInvoice, not just hidden in this form).
+  const [clientSearch, setClientSearch] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<number | "">("");
+  const [salesRep, setSalesRep] = useState("");
+
   const orderCandidates = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
     if (!q) return jobOrders;
@@ -200,9 +243,22 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
     );
   }, [jobOrders, orderSearch]);
 
+  const clientCandidates = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) => c.name.toLowerCase().includes(q));
+  }, [clients, clientSearch]);
+
   function handleSelectOrder(orderNo: string) {
     setSelectedOrderNo(orderNo);
-    if (!orderNo) return;
+    if (!orderNo) {
+      // Reverting to a standalone entry — client/sales rep go back to
+      // blank, pending a manual pick below (they're not carried over
+      // from whatever the order had).
+      setSelectedClientId("");
+      setSalesRep("");
+      return;
+    }
     const order = jobOrders.find((o) => o.job_order_no === orderNo);
     if (!order) return;
     // Auto-fill, not lock — every field set here stays editable below,
@@ -219,6 +275,12 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
     const qty = order.qty_to_print ?? 0;
     setQuantity(qty);
     setUnitPrice(qty > 0 ? (order.total_amount ?? 0) / qty : 0);
+    // client_id comes straight from the order's own real FK — not a
+    // name match. No picker shown for this case (see JSX below); it's
+    // silently carried through to submission. sales_rep is cleared —
+    // hidden/not applicable while linked.
+    setSelectedClientId(order.client_id ?? "");
+    setSalesRep("");
   }
 
   const numericQuantity = typeof quantity === "number" ? quantity : 0;
@@ -250,6 +312,11 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
         date,
         jobOrderNo: selectedOrderNo || null,
         customerName,
+        clientId: selectedClientId === "" ? null : selectedClientId,
+        // Only ever sent when standalone — recordInvoice re-nulls it
+        // server-side anyway if jobOrderNo is set, but the form
+        // shouldn't even offer to send a value that can't be used.
+        salesRep: selectedOrderNo ? null : salesRep || null,
         productDescription,
         revenueCategory,
         businessUnit,
@@ -267,6 +334,9 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
         setSelectedOrderNo("");
         setOrderSearch("");
         setCustomerName("");
+        setClientSearch("");
+        setSelectedClientId("");
+        setSalesRep("");
         setProductDescription("");
         setRevenueCategory("");
         setBusinessUnit("");
@@ -323,6 +393,58 @@ function InvoiceForm({ jobOrders }: { jobOrders: JobOrderOption[] }) {
           <div className="mt-2 text-sm text-at-slate">No orders match your search.</div>
         )}
       </div>
+
+      {/* Client + sales rep — only shown for a standalone entry. Once a
+          job order is linked, client_id is silently carried through
+          from that order's own real FK (see handleSelectOrder) and
+          sales_rep stays null — attribution comes from the order via
+          the join, never a second copy here (sales_rep_only_when_unlinked). */}
+      {!selectedOrderNo && (
+        <div className="mb-4">
+          <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+            Client (optional)
+          </label>
+          <input
+            type="text"
+            value={clientSearch}
+            onChange={(e) => setClientSearch(e.target.value)}
+            placeholder="Search by client name..."
+            className="mb-2 w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+          <select
+            value={selectedClientId}
+            onChange={(e) => setSelectedClientId(e.target.value === "" ? "" : Number(e.target.value))}
+            className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          >
+            <option value="">— No client selected —</option>
+            {clientCandidates.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.phone ? ` — ${c.phone}` : ""}
+              </option>
+            ))}
+          </select>
+          {clientCandidates.length === 0 && clientSearch.trim() && (
+            <div className="mt-2 text-sm text-at-slate">No clients match your search.</div>
+          )}
+
+          <label className="mb-1 mt-3 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+            Sales / Marketing Rep (who brought this job)
+          </label>
+          <select
+            value={salesRep}
+            onChange={(e) => setSalesRep(e.target.value)}
+            className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          >
+            <option value="">— None / Walk-in —</option>
+            {SALES_REP_NAMES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
