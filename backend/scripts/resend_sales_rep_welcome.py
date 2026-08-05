@@ -1,10 +1,15 @@
 """
-One-time operational script -- regenerates a fresh recovery link and
-resends the welcome email for EXISTING sales-rep accounts. Reuses the
-exact same two real code paths create_guest_accounts.py's
-provision_guest_account() already uses for this (generate_link +
-send_account_welcome), just without the create_user() step -- these
-are real, already-provisioned accounts, not new ones.
+One-time operational script -- regenerates a fresh recovery code and
+resends the welcome email for EXISTING sales-rep accounts. Reuses
+generate_link() from create_guest_accounts.py's provision_guest_account()
+for the token itself, but delivers it via send_account_welcome_with_code
+(a pasted code, not a clickable link) -- see that function's own
+docstring in backend/app/email.py for why: generate_link()'s
+`redirect_to` was found to be silently truncated by Supabase, making
+the clickable-link delivery unreliable in production (confirmed live,
+reproduced three times, even after the redirect URL was added to the
+project's allowlist). The code-based path sidesteps that entirely: no
+redirect_to-derived URL anywhere in the email.
 
 Scoped deliberately to the 7 Guest-role sales reps whose ONLY access is
 this account (per explicit instruction) -- NOT the 3 dual-role reps
@@ -22,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from create_guest_accounts import RESET_PASSWORD_REDIRECT
-from app.email import send_account_welcome
+from app.email import send_account_welcome_with_code
 from app.supabase_client import get_supabase
 
 # Confirmed live against profiles (is_sales_rep=true, role=Guest) right
@@ -41,6 +46,11 @@ RECIPIENTS: list[tuple[str, str]] = [
 def resend_welcome(full_name: str, email: str) -> dict:
     supabase = get_supabase()
 
+    # redirect_to is still passed (harmless, unused by the code-based
+    # flow) purely so generate_link()'s request shape matches every
+    # other call site in this codebase -- the value it comes back
+    # truncated to is irrelevant here since action_link/redirect_to are
+    # never used below, only hashed_token is.
     link_res = supabase.auth.admin.generate_link(
         {
             "type": "recovery",
@@ -48,28 +58,25 @@ def resend_welcome(full_name: str, email: str) -> dict:
             "options": {"redirect_to": RESET_PASSWORD_REDIRECT},
         }
     )
-    action_link = link_res.properties.action_link
+    code = link_res.properties.hashed_token
 
-    sent = send_account_welcome(recipient_email=email, recipient_name=full_name, reset_link=action_link)
+    sent = send_account_welcome_with_code(recipient_email=email, recipient_name=full_name, code=code)
 
     return {
         "email": email,
-        "action_link": action_link,
-        "verification_type": link_res.properties.verification_type,
-        "redirect_to": link_res.properties.redirect_to,
+        "code": code,
         "email_sent": sent,
     }
 
 
 def main() -> None:
-    print(f"=== Resending welcome email to {len(RECIPIENTS)} existing sales-rep accounts ===\n")
+    print(f"=== Resending welcome email (code-based) to {len(RECIPIENTS)} existing sales-rep accounts ===\n")
     results = []
     for full_name, email in RECIPIENTS:
         print(f"--- {full_name} ({email}) ---")
         result = resend_welcome(full_name, email)
         results.append((full_name, result))
-        print(f"  link well-formed: {result['action_link'].startswith('http')}")
-        print(f"  redirect_to correct: {result['redirect_to'] == RESET_PASSWORD_REDIRECT}")
+        print(f"  code issued: {bool(result['code'])}")
         print(f"  email_sent: {result['email_sent']}")
         print()
 

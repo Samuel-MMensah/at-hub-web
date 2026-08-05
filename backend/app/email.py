@@ -737,6 +737,78 @@ def send_account_welcome(recipient_email: str, recipient_name: str, reset_link: 
     )
 
 
+# Static -- no query string, no fragment, nothing Supabase's own
+# redirect machinery ever touches. Deliberately not built from
+# generate_link()'s own `redirect_to` for that exact reason.
+RESET_PASSWORD_PAGE_URL = "https://hub.appointedtimeprinting.com/reset-password"
+
+
+def send_account_welcome_with_code(recipient_email: str, recipient_name: str, code: str) -> bool:
+    """
+    Fallback delivery for send_account_welcome's clickable link --
+    added after generate_link()'s `redirect_to` was found to be
+    silently truncated by Supabase (confirmed live, reproduced three
+    times against fresh disposable accounts): the recovery link's
+    redirect landed on the site root instead of /reset-password, where
+    proxy.ts's unauthenticated-redirect-to-login logic discarded the
+    token before any client code ever ran. See MIGRATION_STATUS.md for
+    the full diagnostic.
+
+    This sidesteps the broken redirect entirely: no redirect_to-derived
+    URL anywhere in this email. Just a static link to the reset page
+    and a code the recipient pastes in themselves, verified client-side
+    via supabase.auth.verifyOtp({ token_hash, type: 'recovery' })
+    (src/app/reset-password/page.tsx) -- the exact same underlying
+    verification Supabase's own link would have performed, just
+    triggered by a pasted value instead of a click-and-redirect that
+    depends on redirect_to actually working.
+
+    `code` is generate_link()'s own `hashed_token` -- same
+    "server-generated, not user-typed, trusted input" contract as
+    send_account_welcome's reset_link (see that docstring's SAFETY
+    note) -- html.escape()'d below for the same defensive-consistency
+    reason, not because it's actually risky.
+    """
+    code_html = (
+        '<div style="margin:14px 0;padding:14px;background:#f1f5f9;border-radius:8px;'
+        'text-align:center;">'
+        '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;'
+        'letter-spacing:0.05em;margin-bottom:6px;">Your Sign-In Code</div>'
+        f'<div style="font-family:monospace;font-size:14px;font-weight:700;color:#0f172a;'
+        f'word-break:break-all;">{html.escape(code)}</div>'
+        "</div>"
+    )
+    button_html = (
+        f'<a href="{html.escape(RESET_PASSWORD_PAGE_URL)}" style="display:inline-block;background:#0f172a;'
+        f'color:#ffffff;text-decoration:none;font-weight:600;font-size:13px;'
+        f'padding:0.6rem 1.4rem;border-radius:6px;">Go to Reset Password Page</a>'
+    )
+    footer = (
+        f"{code_html}{button_html}<br><br>"
+        "Open the page above, paste the code into the box, then set your password. "
+        "This code is one-time use and expires soon."
+    )
+
+    shell_html = _email_shell(
+        accent_bg="#0f172a",
+        heading="WELCOME TO THE JOB ORDER HUB",
+        subheading="Appointed Time Printing Enterprise Hub",
+        intro=(
+            f"Hi {html.escape(recipient_name)}, you now have access to the Job Order Hub to "
+            "track the orders and revenue you bring in — live job performance and revenue "
+            "figures tied to your work. Use the code below to set your password."
+        ),
+        rows=[("Account Email", recipient_email, None)],
+        footer=footer,
+    )
+    return _send_resend_email(
+        [recipient_email],
+        subject="Welcome to the Appointed Time Job Order Hub",
+        html_body=shell_html,
+        log_context="account-welcome-code",
+    )
+
+
 def handle_overdue_alert(order_id: int) -> dict:
     """
     Claim-then-send, extracted out of the FastAPI route so it's directly

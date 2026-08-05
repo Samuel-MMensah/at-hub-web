@@ -28,7 +28,27 @@ import { createClient } from "@/lib/supabase/client";
 // proxy.ts must allow this route without an existing session (same
 // exclusion as /login) — the very first request here has no session
 // yet; that's what this page exists to establish.
-type Status = "waiting" | "ready" | "invalid" | "submitting" | "done";
+//
+// CODE-ENTRY FALLBACK: the link-based path above (detectSessionInUrl
+// auto-exchanging a token embedded in the URL) turned out to be
+// unreliable in production — generate_link()'s `redirect_to` was found
+// to be silently truncated by Supabase, landing the recovery link's
+// redirect on the site root instead of here, where proxy.ts's
+// unauthenticated-redirect-to-login logic discarded the token before
+// this page's own code ever ran. See MIGRATION_STATUS.md for the full
+// diagnostic. Rather than gate this fallback behind a timeout (the
+// original "invalid" state, now removed), the code form is shown
+// immediately alongside the automatic check — no arbitrary wait for
+// the (now known-unreliable) link path, and a real link, if one ever
+// does establish a session, simply wins the race and this form becomes
+// moot. `token_hash` is generate_link()'s own value, emailed via
+// send_account_welcome_with_code (backend/app/email.py) — verifyOtp
+// only needs { token_hash, type }, no email: confirmed against the
+// real @supabase/auth-js VerifyTokenHashParams type, which has no
+// email field at all (the task's own suggested call signature
+// included one; corrected here to match the real API, not copied
+// as-given).
+type Status = "waiting" | "ready" | "submitting" | "done";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -36,6 +56,10 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [verifyingCode, setVerifyingCode] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -56,18 +80,35 @@ export default function ResetPasswordPage() {
       if (data.session) setStatus((s) => (s === "waiting" ? "ready" : s));
     });
 
-    // If nothing establishes a session within a few seconds, the link
-    // was invalid, expired, or already used — say so rather than leave
-    // a blank form waiting forever.
-    const timeout = setTimeout(() => {
-      setStatus((s) => (s === "waiting" ? "invalid" : s));
-    }, 5000);
-
     return () => {
       subscription.unsubscribe();
-      clearTimeout(timeout);
     };
   }, []);
+
+  async function handleVerifyCode(e: React.SubmitEvent) {
+    e.preventDefault();
+    setCodeError(null);
+
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setCodeError("Enter the code from your welcome email.");
+      return;
+    }
+
+    setVerifyingCode(true);
+    const supabase = createClient();
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      token_hash: trimmed,
+      type: "recovery",
+    });
+    setVerifyingCode(false);
+
+    if (verifyError) {
+      setCodeError(verifyError.message);
+      return;
+    }
+    setStatus("ready");
+  }
 
   async function handleSubmit(e: React.SubmitEvent) {
     e.preventDefault();
@@ -109,13 +150,40 @@ export default function ResetPasswordPage() {
         </div>
 
         {status === "waiting" && (
-          <p className="text-center text-sm text-at-slate">Verifying your link…</p>
-        )}
+          <div>
+            <p className="text-center text-sm text-at-slate">
+              Checking your link automatically… or enter the code from your welcome email below.
+            </p>
+            <form onSubmit={handleVerifyCode} className="mt-4 flex flex-col gap-3">
+              <div>
+                <label
+                  htmlFor="code"
+                  className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate"
+                >
+                  Sign-In Code
+                </label>
+                <input
+                  id="code"
+                  type="text"
+                  autoComplete="off"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="Paste your code here"
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </div>
 
-        {status === "invalid" && (
-          <p className="text-center text-sm font-semibold text-at-danger">
-            This link is invalid or has expired. Ask an administrator to send a new one.
-          </p>
+              {codeError && <p className="text-sm font-semibold text-at-danger">{codeError}</p>}
+
+              <button
+                type="submit"
+                disabled={verifyingCode}
+                className="flex w-full items-center justify-center rounded-lg bg-at-navy px-3 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-at-navy-soft disabled:opacity-60"
+              >
+                {verifyingCode ? "Verifying…" : "Verify Code"}
+              </button>
+            </form>
+          </div>
         )}
 
         {(status === "ready" || status === "submitting") && (
