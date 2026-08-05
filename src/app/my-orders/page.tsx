@@ -49,7 +49,7 @@ export default async function MyOrdersPage() {
   const { orders, jobs } = allowed ? await getMyOrders(user.email) : { orders: [], jobs: [] };
 
   return (
-    <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
+    <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
       <TopBar
         title="Appointed Time Printing Ltd."
         subtitle="Secured Capacity Planning Engine"

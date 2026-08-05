@@ -7,6 +7,7 @@ interface AppShellProps {
   userName: string;
   userRole: string;
   role: Role | null;
+  isSalesRep: boolean;
   pendingApprovalsCount?: number;
 }
 
@@ -15,6 +16,7 @@ export function AppShell({
   userName,
   userRole,
   role,
+  isSalesRep,
   pendingApprovalsCount,
 }: AppShellProps) {
   return (
@@ -23,6 +25,7 @@ export function AppShell({
         userName={userName}
         userRole={userRole}
         role={role}
+        isSalesRep={isSalesRep}
         pendingApprovalsCount={pendingApprovalsCount}
       />
       <main className="flex-1 overflow-y-auto px-8 py-8">

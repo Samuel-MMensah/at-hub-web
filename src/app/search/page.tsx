@@ -80,7 +80,7 @@ export default async function SearchPage({
   const results = query ? await searchOrders(query) : [];
 
   return (
-    <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
+    <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
       <div className="mb-4 flex items-center justify-between">

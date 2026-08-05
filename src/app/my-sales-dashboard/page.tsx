@@ -66,7 +66,7 @@ export default async function MySalesDashboardPage() {
     : [];
 
   return (
-    <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
+    <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
       <div className="mb-1 text-lg font-bold text-at-navy-soft">My Sales Dashboard</div>

@@ -28,7 +28,7 @@ export default async function AuthorizationPage() {
   const orders = allowed ? await getPendingOrders() : [];
 
   return (
-    <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
+    <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
       <div className="mb-4 text-lg font-bold text-at-navy-soft">Executive Authorization Control Panel</div>

@@ -31,7 +31,7 @@ export default async function ProductionBoardPage() {
   const lockedDept = normalizedDept === "PRESS" || normalizedDept === "GARMENT" ? normalizedDept : null;
 
   return (
-    <AppShell userName={user.fullName} userRole={user.role} role={user.role}>
+    <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
       <TopBar
         title="Appointed Time Printing Ltd."
         subtitle="Secured Capacity Planning Engine"

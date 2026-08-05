@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Archive,
   History,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,6 +37,18 @@ export interface NavItem {
   icon: LucideIcon;
   /** Roles allowed to see this item. Omit for "any authenticated user". */
   roles?: Role[];
+  /**
+   * Additional, role-INDEPENDENT visibility condition — ORed against
+   * `roles` (not ANDed), so a Guest-only sales rep sees the item even
+   * though "Guest" alone wouldn't unlock anything role-gated, and a
+   * Front-Desk-plus-sales-rep account keeps every one of their normal
+   * Front Desk items too. Confirmed live (disposable accounts, both
+   * the Guest-only and dual-role cases) — see this task's own report.
+   * If omitted, an item with no `roles` stays open to any authenticated
+   * user exactly as before; setting this makes the item hidden by
+   * default until isSalesRep is true, even with no `roles` set.
+   */
+  requiresSalesRep?: boolean;
   badgeKey?: "pendingApprovals";
 }
 
@@ -70,6 +83,12 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Raise Job Order", href: "/raise-order", icon: FilePlus2, roles: [...ADMIN_ROLES, ...RAISE_ORDER_ROLES] },
       { label: "My Order Tracker", href: "/my-orders", icon: ClipboardList, roles: [...ADMIN_ROLES, ...RAISE_ORDER_ROLES] },
+      // Same conceptual pattern as My Order Tracker — a personal,
+      // self-filtered view, not a role-gated one. No `roles` here
+      // deliberately: visibility is purely requiresSalesRep, matching
+      // the confirmed dual-role reality (Bertha/Mohammed/Mante hold
+      // Front Desk but are gated here only by is_sales_rep).
+      { label: "My Sales Dashboard", href: "/my-sales-dashboard", icon: TrendingUp, requiresSalesRep: true },
       { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, ...WAREHOUSE_ROLES] },
       { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },
@@ -87,7 +106,17 @@ export function hasRole(role: Role | null, allowedRoles: Role[]): boolean {
   return allowedRoles.some((allowed) => allowed.trim().toLowerCase() === normalizedRole);
 }
 
-export function canSeeItem(item: NavItem, role: Role | null): boolean {
-  if (!item.roles) return true;
+export function canSeeItem(item: NavItem, role: Role | null, isSalesRep: boolean): boolean {
+  // requiresSalesRep is an OR, not an AND: satisfying it alone is
+  // enough regardless of role/roles. Checked first so it can grant
+  // visibility a role-gated item's own `roles` list would otherwise
+  // deny (the Guest-only sales rep case).
+  if (item.requiresSalesRep && isSalesRep) return true;
+  if (!item.roles) {
+    // No role restriction: open to any authenticated user — UNLESS
+    // requiresSalesRep is set and wasn't satisfied above, in which
+    // case that's the item's only gate and it stays hidden.
+    return !item.requiresSalesRep;
+  }
   return hasRole(role, item.roles);
 }

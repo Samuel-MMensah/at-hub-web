@@ -213,6 +213,7 @@ export default async function CommandCenterPage() {
       userName={user.fullName}
       userRole={user.role}
       role={user.role}
+      isSalesRep={user.isSalesRep}
       pendingApprovalsCount={pendingApprovals}
     >
       <TopBar

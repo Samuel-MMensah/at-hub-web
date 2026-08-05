@@ -12,6 +12,7 @@ interface SidebarProps {
   userName: string;
   userRole: string;
   role: Role | null;
+  isSalesRep: boolean;
   pendingApprovalsCount?: number;
 }
 
@@ -19,6 +20,7 @@ export function Sidebar({
   userName,
   userRole,
   role,
+  isSalesRep,
   pendingApprovalsCount = 0,
 }: SidebarProps) {
   const pathname = usePathname();
@@ -44,7 +46,7 @@ export function Sidebar({
         </div>
 
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter((item) => canSeeItem(item, role));
+          const visibleItems = group.items.filter((item) => canSeeItem(item, role, isSalesRep));
           if (visibleItems.length === 0) return null;
 
           return (
