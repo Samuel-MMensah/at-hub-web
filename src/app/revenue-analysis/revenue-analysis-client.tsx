@@ -1,16 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  type LabelProps,
+} from "recharts";
 import { monthKeyAndLabel } from "@/lib/month-groups";
 import { weekKeyAndLabel } from "@/lib/week-groups";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { Button } from "@/components/ui/button";
 
 const CURRENCY = "GH₵";
 
 export interface InvoiceRow {
   id: number;
   date: string;
+  customer_name: string | null;
   revenue_category: string;
   business_unit: string;
   invoice_total: number;
@@ -172,38 +186,231 @@ function todayUtcMidnight(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-function buildAgingData(invoices: InvoiceRow[]) {
+// Drill-down row shape — the exact invoice-level detail that sums to
+// a bucket's `value`, produced in the SAME pass as that sum below
+// (never a second, separately-filtered query) so the two can't drift.
+interface AgingRow {
+  id: number;
+  customerName: string | null;
+  date: string;
+  daysOverdue: number;
+  balance: number;
+}
+
+interface AgingBucket {
+  name: string;
+  value: number;
+  color: string;
+  rows: AgingRow[];
+}
+
+function buildAgingData(invoices: InvoiceRow[]): AgingBucket[] {
   const today = todayUtcMidnight();
-  const bucketSums = [0, 0, 0, 0];
+  const buckets: AgingBucket[] = AGING_BUCKETS.map((name, i) => ({
+    name,
+    value: 0,
+    color: AGING_COLORS[i],
+    rows: [],
+  }));
 
   for (const inv of invoices) {
     if (inv.balance <= 0) continue;
     const invoiceDate = parseDateOnly(inv.date);
     const daysOverdue = Math.floor((today.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24));
     const bucketIndex = daysOverdue <= 30 ? 0 : daysOverdue <= 60 ? 1 : daysOverdue <= 90 ? 2 : 3;
-    bucketSums[bucketIndex] += inv.balance;
+    const bucket = buckets[bucketIndex];
+    bucket.value += inv.balance;
+    bucket.rows.push({
+      id: inv.id,
+      customerName: inv.customer_name,
+      date: inv.date,
+      daysOverdue,
+      balance: inv.balance,
+    });
   }
 
-  return AGING_BUCKETS.map((name, i) => ({ name, value: bucketSums[i], color: AGING_COLORS[i] }));
+  // Highest-risk first within each bucket — same order the drill-down
+  // modal displays, computed once here rather than re-sorted per open.
+  for (const bucket of buckets) {
+    bucket.rows.sort((a, b) => b.balance - a.balance);
+  }
+
+  return buckets;
 }
 
-interface AgingSlice {
-  name: string;
-  value: number;
-  color: string;
+// Reads the SAME bucket sums buildAgingData already computed — no
+// second query, no re-derivation. "31+ days overdue" == every bucket
+// except Current, matching the sentence's own wording exactly.
+function buildAgingTakeaway(buckets: AgingBucket[]): string {
+  const total = buckets.reduce((sum, b) => sum + b.value, 0);
+  if (total === 0) {
+    return "No outstanding revenue to age — every invoice is fully paid.";
+  }
+
+  const current = buckets[0].value;
+  const overdue = total - current;
+  if (overdue === 0) {
+    return `100% of outstanding revenue (${money(total)}) is current (0-30 days) — nothing is overdue.`;
+  }
+
+  // overduePct derived as the complement of currentPct (not
+  // independently rounded) so the two always sum to exactly 100,
+  // never a rounding artifact like "51% + 50%".
+  const currentPct = Math.round((current / total) * 100);
+  const overduePct = 100 - currentPct;
+  return `${currentPct}% of outstanding revenue is current (0-30 days); ${overduePct}% is 31+ days overdue.`;
 }
 
-function AgingChart({ data }: { data: AgingSlice[] }) {
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+// Same downloadCsv shape as Audit Log/My Sales Dashboard — duplicated
+// locally per this codebase's established per-file convention.
+function downloadCsv(filenamePrefix: string, columns: string[], rows: string[][]) {
+  const lines = [columns.join(","), ...rows.map((row) => row.map(csvEscape).join(","))];
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  link.href = url;
+  link.download = `${filenamePrefix}_${yyyy}${mm}${dd}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+const DRILLDOWN_COLUMNS = ["Customer", "Invoice Date", "Days Overdue", "Balance"];
+
+function agingRowToCsv(row: AgingRow): string[] {
+  return [row.customerName ?? "", row.date, String(row.daysOverdue), row.balance.toFixed(2)];
+}
+
+// Read-only detail view, not a destructive confirmation — same
+// overlay+panel structure as Archive's DeleteMasterOrderSection modal
+// (the one existing modal precedent in this app), but no backdrop-click
+// dismissal was added there either, so this doesn't invent one: an
+// explicit Close button only, matching that precedent exactly.
+function AgingDrilldownModal({ bucket, onClose }: { bucket: AgingBucket; onClose: () => void }) {
+  function exportCsv() {
+    downloadCsv(`ATP_ar_aging_${bucket.name.replace(/[^a-z0-9]+/gi, "_")}`, DRILLDOWN_COLUMNS, bucket.rows.map(agingRowToCsv));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-at-lg bg-at-white p-6 shadow-at-md">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <div className="text-base font-bold text-at-navy">{bucket.name}</div>
+            <div className="mt-0.5 text-xs text-at-slate">
+              {bucket.rows.length} invoice{bucket.rows.length === 1 ? "" : "s"} · {money(bucket.value)} total
+              outstanding
+            </div>
+          </div>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+
+        <div className="mb-3">
+          <Button onClick={exportCsv}>⬇️ Download CSV</Button>
+        </div>
+
+        <div className="overflow-y-auto rounded-at border border-at-border">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-at-border bg-at-bg">
+                <th className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Customer
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Invoice Date
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Days Overdue
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Balance
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {bucket.rows.map((row) => (
+                <tr key={row.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
+                  <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-at-navy">
+                    {row.customerName || "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{row.date}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">{row.daysOverdue}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right font-bold text-at-navy">
+                    {money(row.balance)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-at-navy bg-at-bg">
+                <td colSpan={3} className="whitespace-nowrap px-4 py-2.5 font-extrabold text-at-navy">
+                  TOTAL
+                </td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right font-extrabold text-at-navy">
+                  {money(bucket.value)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Renders ONLY for a zero-value bar — a genuinely-checked-and-empty
+// bucket needs to read differently from "no bar rendered at all"
+// (which looks identical to a loading/broken state). Grey, matching
+// this app's existing em-dash "no data" convention (Audit Log/Archive/
+// the table just below this chart's own `v === 0 ? "—" : money(v)`).
+function ZeroBucketLabel(props: LabelProps) {
+  const viewBox = props.viewBox as { x?: number; y?: number; width?: number } | undefined;
+  if (props.value !== 0 || !viewBox) return null;
+  const x = (viewBox.x ?? 0) + (viewBox.width ?? 0) / 2;
+  const y = (viewBox.y ?? 0) - 6;
+  return (
+    <text x={x} y={y} textAnchor="middle" fill="#94a3b8" fontSize={11} fontWeight={600}>
+      {money(0)}
+    </text>
+  );
+}
+
+function AgingChart({ data }: { data: AgingBucket[] }) {
+  const [selectedBucket, setSelectedBucket] = useState<AgingBucket | null>(null);
+  const takeaway = useMemo(() => buildAgingTakeaway(data), [data]);
+
+  // Zero buckets aren't clickable — there's nothing to drill into, and
+  // an empty modal would just be noise. The GH₵0.00 label (below) is
+  // what confirms "genuinely checked, genuinely zero" instead.
+  function handleBarClick(entry: AgingBucket) {
+    if (entry.rows.length === 0) return;
+    setSelectedBucket(entry);
+  }
+
   return (
     <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
       <div className="text-xs font-bold uppercase tracking-wide text-at-slate">AR Aging</div>
       {/* MANDATORY, visible caption — not a tooltip, not a code comment.
           Anyone looking at this chart needs to see this limitation
           without hovering or reading source. */}
-      <div className="mb-3 mt-1 text-xs text-at-slate">
+      <div className="mb-2 mt-1 text-xs text-at-slate">
         Aged by original invoice date — does not reflect partial payments made against older
         invoices, since payment timing isn&apos;t separately tracked.
       </div>
+      <div className="mb-3 text-sm font-semibold text-at-navy">{takeaway}</div>
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
           <CartesianGrid stroke={GRID_COLOR} vertical={false} />
@@ -218,11 +425,19 @@ function AgingChart({ data }: { data: AgingSlice[] }) {
           <Tooltip content={<ChartTooltip />} cursor={{ fill: "#f8fafc" }} />
           <Bar dataKey="value" name="Outstanding Balance" radius={[4, 4, 0, 0]} maxBarSize={80}>
             {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
+              <Cell
+                key={entry.name}
+                fill={entry.color}
+                cursor={entry.rows.length > 0 ? "pointer" : "default"}
+                onClick={() => handleBarClick(entry)}
+              />
             ))}
+            <LabelList dataKey="value" content={ZeroBucketLabel} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+
+      {selectedBucket && <AgingDrilldownModal bucket={selectedBucket} onClose={() => setSelectedBucket(null)} />}
     </div>
   );
 }
