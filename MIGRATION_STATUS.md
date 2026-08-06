@@ -1053,6 +1053,143 @@ and the `material_catalog`/`material_receipts`/`material_issuances`/
 `stock_balance` schema itself — these are the source of truth, not
 this doc.
 
+## Approved Orders Archive — Master Order Revision: customer name editing
+
+Added a Customer Name field to the Master Order Revision form
+(`src/app/archive/archive-client.tsx`'s `RevisionForm`), alongside the
+existing qty/total_amount/deposit_amount/type_of_print fields. The
+save path (`reviseOrder`, `src/app/archive/actions.ts`) is
+deliberately **not** a plain `job_orders.customer_name` edit — per
+confirmed decision, when the order has a real `client_id` it corrects
+the **canonical `clients` record**, so the fix applies everywhere that
+client is referenced going forward (Sales Rep Dashboard, future
+orders raised against that client, Global Search) — not just this one
+order.
+
+**Collision handling** — same "warn, don't silently merge" pattern
+already established for Raise Job Order's new-client duplicate check
+(`raise-order/actions.ts`'s `submitBatch`): a case-insensitive
+(`ilike`) lookup against `clients.name` before writing. A match on a
+**different** client (`existingClient.id !== current.client_id`)
+blocks the whole save outright and surfaces that client's real
+name/phone/email in the error — never silently reused or merged. A
+match on **the same client** (renaming to its own current name, or
+only a case change) is correctly *not* treated as a collision, since
+`existingClient.id === current.client_id` in that case — verified
+live, not just reasoned about, by renaming a synthetic client and
+confirming the save succeeds when the "colliding" match is itself.
+
+**"Don't rewrite history" principle** — same one already established
+for `job_invoices.customer_name`: only the order actively being
+revised gets its own `job_orders.customer_name` updated. No other
+order's historical snapshot is ever touched, even for the same client
+— confirmed live by renaming one synthetic order's client and showing
+a different, unrelated real order (`P702640`, a different client) was
+byte-for-byte unchanged before/after.
+
+**No-`client_id` fallback**: if the order has no linked client record
+(pre-dates the client-linkage work, or is otherwise unlinked), only
+that order's own `customer_name` is corrected — `clients` is never
+touched. Empty names are rejected outright.
+
+**Known gap, found live during this task, flagged not fixed (out of
+scope)**: of 66 real `job_orders` rows, exactly one — `P719381`
+("ADB", created by bertha.tackie@appointedtime.com.gh) — has no
+`client_id`, even though a matching `clients` row (`"ADB"`, id 21)
+already exists. Root cause not investigated (not requested); this
+order simply exists in the "no `client_id`" fallback state described
+above until someone links it deliberately.
+
+**Verification**: synthetic clients/orders, real Admin session, full
+cleanup after. Rename propagated to `clients.name` and the order's own
+`customer_name` correctly; collision attempt (renaming to a second
+synthetic client's exact name) was blocked with the real client's
+phone/email in the error, no merge; unlinked-order path updated only
+that order, `clients` row count unchanged.
+
+## Sample / No Charge orders
+
+Raise Job Order (`src/app/raise-order/`) can mark any cart item as a
+sample / no-charge job instead of a real paying one — two reasons,
+exact strings: **"Awaiting Customer Decision"** and **"Complimentary —
+No Charge Expected"**.
+
+**Schema**: `job_orders.is_sample BOOLEAN NOT NULL DEFAULT false` and
+`job_orders.sample_reason TEXT` (nullable), guarded by **two** `CHECK`
+constraints, not one — confirmed by name via a real rejected insert
+for each (the exact constraint name Postgres reports on violation),
+not just read from `pg_constraint`:
+- `sample_reason_requires_flag`: `sample_reason IS NULL OR is_sample =
+  true` — a real paying order can never carry a leftover sample
+  reason by mistake. Live-confirmed: inserting `is_sample=false` with
+  `sample_reason='Awaiting Customer Decision'` was rejected with
+  `violates check constraint "sample_reason_requires_flag"`.
+- `sample_reason_valid_values`: `sample_reason IS NULL OR
+  sample_reason IN` the two real reason strings above — a sample
+  order's reason can't be arbitrary free text, only one of the two UI
+  options. Live-confirmed: inserting `is_sample=true` with
+  `sample_reason='THIS IS NOT A VALID REASON STRING'` was rejected
+  with `violates check constraint "sample_reason_valid_values"`.
+
+(`sample_reason_valid_values` was added beyond what this task
+originally specified — a stricter, reasonable addition, not something
+this doc's earlier draft had accounted for; caught and corrected here
+after a direct challenge rather than left describing only one
+constraint.)
+
+**UI**: a "Sample / No Charge" checkbox on both New Press and New
+Garment cart forms (`SampleOrderFields`, shared in-file by both carts
+the same way `ClientIdentitySection` already is). Checking it removes
+the Total Amount/Deposit Amount/Receipt Number inputs from the DOM
+entirely — not just blanks them — and requires the reason `<select>`
+before the item can be added to the cart.
+
+**Server-side force-to-zero, the real security property**:
+`submitBatch` re-forces `total_amount`/`deposit_amount` to exactly `0`
+for any `is_sample` item, independent of whatever the client actually
+sent — same "never trust a client-supplied value for a money
+invariant" posture as every other write action in this app
+(`recordInvoicePayment`, Dispatch/Archive's `recordPayment`). This was
+verified with a **real bypass attempt**, not just observed UI
+behavior: a payload with `is_sample=true` but `total_amount=999999,
+deposit_amount=500000` was run through `submitBatch`'s actual
+transformation logic and inserted through a real session; the row was
+then **independently re-fetched from the database** (not trusted from
+the insert response) and confirmed to hold `total_amount=0,
+deposit_amount=0` — the malicious values never reached storage.
+
+**Zero other systems needed code changes — confirmed live, not just
+assumed from the math**: a full pipeline test (synthetic sample order:
+raise → Authorization Center approve → Production Board start
+production → send to warehouse → Dispatch Finalize) completed with no
+error at any stage, and Dispatch's real disabled-button formula
+(`(balance > 0 && !confirm30Day) || notReady`) evaluated to `false` —
+auto-unlocked — once the real post-pipeline values were plugged in
+(`balance=0`, `notReady=false`), no payment or 30-day-terms
+confirmation needed. A parallel normal paid order (`total_amount=1000,
+deposit_amount=400`) run through the same pipeline confirmed the
+opposite: still correctly balance-gated (`disabled=true` at `balance
+=600`), completely unaffected by this feature. Separately confirmed by
+reading the code (not modified): Command Center's `contractValue`/
+`depositCollected`/`outstandingBalance` are `SUM(job_orders.total_amount)`/
+`SUM(deposit_amount)` directly off `job_orders`, so a sample row
+contributes exactly `0` automatically; the overdue-collection-alert
+candidate filter (`balance > 0 && daysRemaining < 0`) naturally
+excludes sample orders the same way; Revenue Analysis reads a wholly
+separate table (`job_invoices`) that's only ever populated by a
+deliberate Invoice Entry action, so a sample `job_orders` row never
+auto-creates a revenue row either way.
+
+**Badge**: `StatusBadge` (`src/components/ui/status-badge.tsx`) gained
+a `"sample"` tone (violet — genuinely distinct from every existing
+status color: success/warning/danger/idle/accent) and an optional
+`title` prop carrying `sample_reason` as a native tooltip. Rendered
+next to each page's existing status indicator on Production Board,
+Dispatch, Archive (both the table row and the order-detail panel
+header), My Order Tracker, and Authorization Center — all five read
+`is_sample`/`sample_reason` off the same `job_orders` row their other
+fields already come from, no separate query.
+
 ## Shared infrastructure
 
 - `isGarment()` (ports `_is_garment()` from app.py) lives in
