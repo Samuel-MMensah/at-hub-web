@@ -87,6 +87,7 @@ export async function recordPayment(
 }
 
 interface RevisionInput {
+  customerName: string;
   qtyToPrint: number;
   totalAmount: number;
   depositAmount: number;
@@ -102,13 +103,78 @@ interface RevisionInput {
 // own write target exactly, even though the garment branch of the read
 // side falls back to print_type for the *initial* dropdown value (see
 // buildCategoryOptions in archive-client.tsx).
+//
+// Customer name editing (added later, not in the original port):
+// per confirmed decision, this is deliberately NOT a plain
+// job_orders.customer_name edit when the order has a real client_id —
+// it fixes the CANONICAL clients record, so the correction applies
+// everywhere that client is referenced going forward (Sales Rep
+// Dashboard, future orders, Global Search), not just this order.
+// job_orders.customer_name for THIS order is still updated too (so the
+// order's own snapshot matches), but no OTHER order's customer_name is
+// ever touched — same "don't rewrite history" principle already
+// established for job_invoices.customer_name. If the order has no
+// client_id (pre-dates the client linkage work, or somehow unlinked),
+// only this order's own customer_name is corrected; clients is never
+// involved.
 export async function reviseOrder(orderId: number, input: RevisionInput): Promise<ActionResult> {
   await requireArchiveAccess();
 
+  const customerName = input.customerName.trim();
+  if (!customerName) {
+    return { error: "Customer name cannot be empty." };
+  }
+
   const supabase = await createClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("job_orders")
+    .select("client_id")
+    .eq("id", orderId)
+    .single();
+
+  if (fetchError || !current) {
+    return { error: fetchError?.message ?? "Order not found." };
+  }
+
+  if (current.client_id) {
+    // Case-insensitive collision check, same "warn, don't silently
+    // merge" pattern as Raise Job Order's new-client duplicate check
+    // (raise-order/actions.ts's submitBatch). A match on THIS order's
+    // own client_id (name unchanged, or only a case change) is not a
+    // collision — only a DIFFERENT client already holding this exact
+    // name stops the save.
+    const { data: existingClient, error: lookupError } = await supabase
+      .from("clients")
+      .select("id, name, phone, email")
+      .ilike("name", customerName)
+      .maybeSingle();
+
+    if (lookupError) {
+      return { error: `Could not verify client name: ${lookupError.message}` };
+    }
+    if (existingClient && existingClient.id !== current.client_id) {
+      return {
+        error: `A different client named "${existingClient.name}" already exists (phone: ${
+          existingClient.phone || "—"
+        }, email: ${existingClient.email || "—"}). Renaming would collide with that client's record — use a more specific name if this is genuinely a different client, or resolve the duplicate deliberately before merging them.`,
+      };
+    }
+
+    const { error: clientUpdateError } = await supabase
+      .from("clients")
+      .update({ name: customerName })
+      .eq("id", current.client_id);
+
+    if (clientUpdateError) {
+      return { error: `Could not update client record: ${clientUpdateError.message}` };
+    }
+  }
+
   const { error } = await supabase
     .from("job_orders")
     .update({
+      customer_name: customerName,
       qty_to_print: input.qtyToPrint,
       total_amount: input.totalAmount,
       deposit_amount: input.depositAmount,
