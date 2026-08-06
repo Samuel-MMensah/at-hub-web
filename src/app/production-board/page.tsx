@@ -12,7 +12,7 @@ async function getProductionOrders() {
   const { data } = await supabase
     .from("job_orders")
     .select(
-      "id, job_order_no, customer_name, job_description, department, type_of_print, print_type, status, total_amount, qty_to_print"
+      "id, job_order_no, customer_name, job_description, department, type_of_print, print_type, status, total_amount, qty_to_print, is_sample, sample_reason"
     )
     .in("status", PRODUCTION_BOARD_STATUSES)
     .order("created_at", { ascending: true });

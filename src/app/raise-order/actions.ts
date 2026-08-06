@@ -236,6 +236,14 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
       sample_file_url: sampleResult.url,
       payment_terms: paymentTerms,
       sales_rep: salesRep || null,
+      // Sample / No Charge safety net — re-enforced here, not trusted
+      // from the cart form alone: an is_sample item must have
+      // total_amount and deposit_amount at exactly 0, forced
+      // regardless of whatever the client actually sent. Same "never
+      // trust a client-supplied value for a money invariant" posture
+      // as every other write action in this app (recordInvoicePayment,
+      // dispatch/archive's recordPayment, etc).
+      ...(item.is_sample === true ? { total_amount: 0, deposit_amount: 0 } : {}),
     };
   });
 

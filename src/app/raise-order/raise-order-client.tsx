@@ -373,6 +373,52 @@ function ClientIdentitySection({
   );
 }
 
+// Sample / No Charge — shared by both cart forms' per-item entry
+// section, same in-file-sharing precedent as ClientIdentitySection
+// above. Deliberately NOT offered on the resubmit forms (out of scope,
+// same reasoning as Phase 2's client picker: resubmit edits an
+// already-known order, not a fresh one).
+const SAMPLE_REASON_OPTIONS = ["Awaiting Customer Decision", "Complimentary — No Charge Expected"];
+
+function SampleOrderFields({
+  isSample,
+  setIsSample,
+  sampleReason,
+  setSampleReason,
+}: {
+  isSample: boolean;
+  setIsSample: (v: boolean) => void;
+  sampleReason: string;
+  setSampleReason: (v: string) => void;
+}) {
+  return (
+    <div className="mb-3">
+      <label className="flex items-center gap-2 text-sm font-semibold text-at-navy">
+        <input type="checkbox" checked={isSample} onChange={(e) => setIsSample(e.target.checked)} />
+        Sample / No Charge
+      </label>
+      {isSample && (
+        <div className="mt-2 max-w-sm">
+          <FormField label="Reason ★">
+            <select
+              value={sampleReason}
+              onChange={(e) => setSampleReason(e.target.value)}
+              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            >
+              <option value="">— Select —</option>
+              {SAMPLE_REASON_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Full original job_orders row for the order being resubmitted — every
 // _rd()/_rdf()/_rdi()/_rdd()/_rdl() call in both resubmit forms
 // (app.py) reads straight off resubmit_data, which is the ENTIRE
@@ -540,6 +586,14 @@ interface PressCartItem {
   delivery_mode: string;
   binding_type: string;
   laminating_type: string;
+  // Sample / No Charge — per-item, same granularity as total_amount/
+  // deposit_amount (each cart item is its own job_orders row). When
+  // is_sample is true, total_amount/deposit_amount are always 0 —
+  // enforced both here (the UI hides the inputs and forces 0 on
+  // submit) and again server-side in submitBatch, never trusted from
+  // just one layer.
+  is_sample: boolean;
+  sample_reason: string | null;
   // Garment-only fields, always null on a PRESS item — "garment fields
   // null for schema safety" per the source's own comment.
   print_type: null;
@@ -559,6 +613,8 @@ interface ItemFormState {
   qty: number;
   typePrint: string;
   materialSource: string;
+  isSample: boolean;
+  sampleReason: string;
   printSize: string;
   finishedSize: string;
   paperType: string;
@@ -582,6 +638,8 @@ function blankItemForm(today: string): ItemFormState {
     qty: 0,
     typePrint: "",
     materialSource: "",
+    isSample: false,
+    sampleReason: "",
     printSize: "",
     finishedSize: "",
     paperType: "",
@@ -606,6 +664,8 @@ function itemFormFromCartItem(item: PressCartItem): ItemFormState {
     qty: item.qty_to_print,
     typePrint: item.type_of_print,
     materialSource: item.material_source,
+    isSample: item.is_sample,
+    sampleReason: item.sample_reason ?? "",
     printSize: item.print_size,
     finishedSize: item.finished_print_size,
     paperType: item.paper_type,
@@ -700,22 +760,32 @@ function PressCart({
     if (!cartClientName.trim()) missing.push("Customer Name");
     if (!cartClientPhone.trim()) missing.push("Telephone Number");
     if (!form.desc.trim()) missing.push("Item Description");
-    if (form.totalAmt <= 0) missing.push("Total Item Amount");
+    // A sample item is explicitly zero-value by design — the amount
+    // field is hidden, not just allowed blank, so it can't fail this
+    // check the normal way.
+    if (!form.isSample && form.totalAmt <= 0) missing.push("Total Item Amount");
+    if (form.isSample && !form.sampleReason) missing.push("Sample Reason");
     if (form.qty <= 0) missing.push("Quantity");
     if (!form.typePrint) missing.push("Print Category");
-    if (form.depositAmt > 0 && !form.receiptNo.trim()) {
+    if (!form.isSample && form.depositAmt > 0 && !form.receiptNo.trim()) {
       missing.push("Receipt Number (required since a deposit was entered)");
     }
 
     setMissingFields(missing);
     if (missing.length > 0) return;
 
+    // Forced to 0 here, not just hidden in the UI — an explicit,
+    // intentional state, never an ambiguous "forgotten field" GH₵0.00.
+    // Re-enforced again server-side in submitBatch, not trusted from
+    // this layer alone.
     const newItem: PressCartItem = {
       department: "PRESS",
       job_description: sanitizeString(form.desc),
-      total_amount: form.totalAmt,
-      deposit_amount: form.depositAmt,
-      receipt_no: form.depositAmt > 0 ? sanitizeString(form.receiptNo) : null,
+      total_amount: form.isSample ? 0 : form.totalAmt,
+      deposit_amount: form.isSample ? 0 : form.depositAmt,
+      receipt_no: !form.isSample && form.depositAmt > 0 ? sanitizeString(form.receiptNo) : null,
+      is_sample: form.isSample,
+      sample_reason: form.isSample ? form.sampleReason : null,
       balance_due_date: form.balanceDue,
       date_of_collection: form.collectionDate,
       qty_to_print: Math.trunc(form.qty),
@@ -881,27 +951,39 @@ function PressCart({
             />
           </FormField>
         </div>
+
+        <SampleOrderFields
+          isSample={form.isSample}
+          setIsSample={(v) => setForm((f) => ({ ...f, isSample: v, sampleReason: v ? f.sampleReason : "" }))}
+          sampleReason={form.sampleReason}
+          setSampleReason={(v) => setForm((f) => ({ ...f, sampleReason: v }))}
+        />
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <FormField label={`Total Item Amount (${CURRENCY}) ★`}>
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={form.totalAmt}
-              onChange={(e) => setForm((f) => ({ ...f, totalAmt: Number(e.target.value) }))}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-          <FormField label={`Deposit Paid (${CURRENCY})`}>
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={form.depositAmt}
-              onChange={(e) => setForm((f) => ({ ...f, depositAmt: Number(e.target.value) }))}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
+          {!form.isSample && (
+            <>
+              <FormField label={`Total Item Amount (${CURRENCY}) ★`}>
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={form.totalAmt}
+                  onChange={(e) => setForm((f) => ({ ...f, totalAmt: Number(e.target.value) }))}
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </FormField>
+              <FormField label={`Deposit Paid (${CURRENCY})`}>
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={form.depositAmt}
+                  onChange={(e) => setForm((f) => ({ ...f, depositAmt: Number(e.target.value) }))}
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </FormField>
+            </>
+          )}
           <FormField label="Balance Deadline ★">
             <input
               type="date"
@@ -919,17 +1001,19 @@ function PressCart({
             />
           </FormField>
         </div>
-        <div className="mt-3 max-w-sm">
-          <FormField label="Receipt Number (required if a deposit is entered)">
-            <input
-              type="text"
-              value={form.receiptNo}
-              onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
-              placeholder="e.g. RCT-00123"
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-        </div>
+        {!form.isSample && (
+          <div className="mt-3 max-w-sm">
+            <FormField label="Receipt Number (required if a deposit is entered)">
+              <input
+                type="text"
+                value={form.receiptNo}
+                onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
+                placeholder="e.g. RCT-00123"
+                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+              />
+            </FormField>
+          </div>
+        )}
 
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
           <FormField label="Quantity ★">
@@ -1102,10 +1186,18 @@ function PressCart({
                     </div>
                     <div className="mt-1 text-xs text-at-slate">
                       Qty: <strong>{item.qty_to_print.toLocaleString()}</strong> &nbsp;·&nbsp; Category:{" "}
-                      <strong>{item.type_of_print}</strong> &nbsp;·&nbsp; Amount:{" "}
-                      <strong>{money(item.total_amount)}</strong> &nbsp;·&nbsp; Deposit:{" "}
-                      <strong>{money(item.deposit_amount)}</strong> &nbsp;·&nbsp; Collection:{" "}
-                      <strong>{item.date_of_collection}</strong>
+                      <strong>{item.type_of_print}</strong> &nbsp;·&nbsp;{" "}
+                      {item.is_sample ? (
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[0.65rem] font-bold text-violet-800">
+                          SAMPLE — {item.sample_reason}
+                        </span>
+                      ) : (
+                        <>
+                          Amount: <strong>{money(item.total_amount)}</strong> &nbsp;·&nbsp; Deposit:{" "}
+                          <strong>{money(item.deposit_amount)}</strong>
+                        </>
+                      )}{" "}
+                      &nbsp;·&nbsp; Collection: <strong>{item.date_of_collection}</strong>
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => startEditing(idx)}>
@@ -1291,6 +1383,8 @@ interface GarmentCartItem {
   delivery_location: string;
   delivery_contact: string;
   process_info: string;
+  is_sample: boolean;
+  sample_reason: string | null;
   // Press-only fields, always null on a GARMENT item — "Press-only
   // fields explicitly null for schema safety" per the source's comment.
   paper_type: null;
@@ -1311,6 +1405,8 @@ interface GarmentItemFormState {
   receiptNo: string;
   qty: number;
   materialSource: string;
+  isSample: boolean;
+  sampleReason: string;
   printType: string;
   deliveryMode: string;
   printSize: string;
@@ -1335,6 +1431,8 @@ function blankGarmentItemForm(today: string): GarmentItemFormState {
     receiptNo: "",
     qty: 0,
     materialSource: "",
+    isSample: false,
+    sampleReason: "",
     printType: "",
     deliveryMode: GARMENT_DELIVERY_MODE_OPTIONS[0],
     printSize: "",
@@ -1360,6 +1458,8 @@ function garmentItemFormFromCartItem(item: GarmentCartItem): GarmentItemFormStat
     receiptNo: item.receipt_no ?? "",
     qty: item.qty_to_print,
     materialSource: item.material_source,
+    isSample: item.is_sample,
+    sampleReason: item.sample_reason ?? "",
     printType: item.print_type,
     deliveryMode: item.delivery_mode,
     printSize: item.print_size,
@@ -1449,11 +1549,12 @@ function GarmentCart({
     if (!cartClientName.trim()) missing.push("Customer Name");
     if (!cartClientPhone.trim()) missing.push("Telephone Number");
     if (!form.desc.trim()) missing.push("Item Description");
-    if (form.totalAmt <= 0) missing.push("Total Item Amount");
+    if (!form.isSample && form.totalAmt <= 0) missing.push("Total Item Amount");
+    if (form.isSample && !form.sampleReason) missing.push("Sample Reason");
     if (form.qty <= 0) missing.push("Quantity");
     if (!form.printType) missing.push("Print Type");
     if (!form.materialSource) missing.push("Material Source");
-    if (form.depositAmt > 0 && !form.receiptNo.trim()) {
+    if (!form.isSample && form.depositAmt > 0 && !form.receiptNo.trim()) {
       missing.push("Receipt Number (required since a deposit was entered)");
     }
 
@@ -1463,9 +1564,11 @@ function GarmentCart({
     const newItem: GarmentCartItem = {
       department: "GARMENT",
       job_description: sanitizeString(form.desc),
-      total_amount: form.totalAmt,
-      deposit_amount: form.depositAmt,
-      receipt_no: form.depositAmt > 0 ? sanitizeString(form.receiptNo) : null,
+      total_amount: form.isSample ? 0 : form.totalAmt,
+      deposit_amount: form.isSample ? 0 : form.depositAmt,
+      receipt_no: !form.isSample && form.depositAmt > 0 ? sanitizeString(form.receiptNo) : null,
+      is_sample: form.isSample,
+      sample_reason: form.isSample ? form.sampleReason : null,
       balance_due_date: form.balanceDue,
       date_of_collection: form.collectionDate,
       qty_to_print: Math.trunc(form.qty),
@@ -1633,27 +1736,38 @@ function GarmentCart({
             />
           </FormField>
         </div>
+        <SampleOrderFields
+          isSample={form.isSample}
+          setIsSample={(v) => setForm((f) => ({ ...f, isSample: v, sampleReason: v ? f.sampleReason : "" }))}
+          sampleReason={form.sampleReason}
+          setSampleReason={(v) => setForm((f) => ({ ...f, sampleReason: v }))}
+        />
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <FormField label={`Total Item Amount (${CURRENCY}) ★`}>
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={form.totalAmt}
-              onChange={(e) => setForm((f) => ({ ...f, totalAmt: Number(e.target.value) }))}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-          <FormField label={`Deposit Paid (${CURRENCY})`}>
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={form.depositAmt}
-              onChange={(e) => setForm((f) => ({ ...f, depositAmt: Number(e.target.value) }))}
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
+          {!form.isSample && (
+            <>
+              <FormField label={`Total Item Amount (${CURRENCY}) ★`}>
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={form.totalAmt}
+                  onChange={(e) => setForm((f) => ({ ...f, totalAmt: Number(e.target.value) }))}
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </FormField>
+              <FormField label={`Deposit Paid (${CURRENCY})`}>
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={form.depositAmt}
+                  onChange={(e) => setForm((f) => ({ ...f, depositAmt: Number(e.target.value) }))}
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </FormField>
+            </>
+          )}
           <FormField label="Balance Deadline ★">
             <input
               type="date"
@@ -1671,17 +1785,19 @@ function GarmentCart({
             />
           </FormField>
         </div>
-        <div className="mt-3 max-w-sm">
-          <FormField label="Receipt Number (required if a deposit is entered)">
-            <input
-              type="text"
-              value={form.receiptNo}
-              onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
-              placeholder="e.g. RCT-00123"
-              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            />
-          </FormField>
-        </div>
+        {!form.isSample && (
+          <div className="mt-3 max-w-sm">
+            <FormField label="Receipt Number (required if a deposit is entered)">
+              <input
+                type="text"
+                value={form.receiptNo}
+                onChange={(e) => setForm((f) => ({ ...f, receiptNo: e.target.value }))}
+                placeholder="e.g. RCT-00123"
+                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+              />
+            </FormField>
+          </div>
+        )}
 
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label="Quantity to Print ★">
@@ -1887,10 +2003,18 @@ function GarmentCart({
                     </div>
                     <div className="mt-1 text-xs text-at-slate">
                       Qty: <strong>{item.qty_to_print.toLocaleString()}</strong> &nbsp;·&nbsp; Type:{" "}
-                      <strong>{item.print_type}</strong> &nbsp;·&nbsp; Amount:{" "}
-                      <strong>{money(item.total_amount)}</strong> &nbsp;·&nbsp; Deposit:{" "}
-                      <strong>{money(item.deposit_amount)}</strong> &nbsp;·&nbsp; Collection:{" "}
-                      <strong>{item.date_of_collection}</strong>
+                      <strong>{item.print_type}</strong> &nbsp;·&nbsp;{" "}
+                      {item.is_sample ? (
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[0.65rem] font-bold text-violet-800">
+                          SAMPLE — {item.sample_reason}
+                        </span>
+                      ) : (
+                        <>
+                          Amount: <strong>{money(item.total_amount)}</strong> &nbsp;·&nbsp; Deposit:{" "}
+                          <strong>{money(item.deposit_amount)}</strong>
+                        </>
+                      )}{" "}
+                      &nbsp;·&nbsp; Collection: <strong>{item.date_of_collection}</strong>
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => startEditing(idx)}>

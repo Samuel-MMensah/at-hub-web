@@ -20,6 +20,8 @@ export interface ProductionOrderRow extends GarmentClassifiable {
   status: string | null;
   total_amount: number | null;
   qty_to_print: number;
+  is_sample: boolean;
+  sample_reason: string | null;
 }
 
 function money(n: number): string {
@@ -127,6 +129,9 @@ function ProductionOrderCard({ order }: { order: ProductionOrderRow & { _dept: D
         <span>·</span>
         <span>{order._dept}</span>
         <StatusBadge label={status} tone={statusTone(status)} />
+        {order.is_sample && (
+          <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+        )}
       </div>
       <div className="mb-1 text-[1.3rem] font-extrabold text-at-navy">
         {order.customer_name || "—"}

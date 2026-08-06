@@ -19,6 +19,8 @@ export interface DispatchOrderRow {
   deposit_amount: number | null;
   payment_terms: string | null;
   created_at: string | null;
+  is_sample: boolean;
+  sample_reason: string | null;
 }
 
 function money(n: number): string {
@@ -118,6 +120,9 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
               {orderNo}
             </span>
             <StatusBadge label={status} tone={statusTone(status)} />
+            {order.is_sample && (
+              <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+            )}
           </div>
           <div className="text-[1.15rem] font-extrabold text-at-navy">
             {order.customer_name || "—"}

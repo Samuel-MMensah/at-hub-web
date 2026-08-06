@@ -18,7 +18,7 @@ async function getDispatchOrders() {
   const { data } = await supabase
     .from("job_orders")
     .select(
-      "id, job_order_no, customer_name, status, total_amount, deposit_amount, payment_terms, created_at"
+      "id, job_order_no, customer_name, status, total_amount, deposit_amount, payment_terms, created_at, is_sample, sample_reason"
     )
     .in("status", DISPATCH_STATUSES)
     .order("created_at", { ascending: true });

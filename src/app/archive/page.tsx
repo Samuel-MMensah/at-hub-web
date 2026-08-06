@@ -18,7 +18,7 @@ async function getArchiveOrders() {
   const { data } = await supabase
     .from("job_orders")
     .select(
-      "id, job_order_no, customer_name, status, department, type_of_print, print_type, total_amount, deposit_amount, qty_to_print, date_of_collection, approved_by"
+      "id, job_order_no, customer_name, client_id, status, department, type_of_print, print_type, total_amount, deposit_amount, qty_to_print, date_of_collection, approved_by, is_sample, sample_reason"
     )
     .in("status", ARCHIVE_STATUSES)
     .order("created_at", { ascending: false })

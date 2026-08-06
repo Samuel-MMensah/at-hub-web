@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { recordPayment, reviseOrder, deleteMasterOrder, reopenOrder } from "./actions";
@@ -15,6 +16,9 @@ export interface ArchiveOrderRow extends GarmentClassifiable {
   id: number;
   job_order_no: string | null;
   customer_name: string;
+  client_id: number | null;
+  is_sample: boolean;
+  sample_reason: string | null;
   status: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
@@ -190,7 +194,12 @@ export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
                   return (
                     <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        {order.job_order_no || "—"}
+                        <span className="flex items-center gap-2">
+                          {order.job_order_no || "—"}
+                          {order.is_sample && (
+                            <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+                          )}
+                        </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
                         {order.customer_name || "—"}
@@ -320,8 +329,11 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
 
   return (
     <div className="mt-4 rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
-      <div className="mb-4 text-sm font-bold text-at-navy">
+      <div className="mb-4 flex items-center gap-2 text-sm font-bold text-at-navy">
         Order Operations: {order.job_order_no}
+        {order.is_sample && (
+          <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+        )}
       </div>
 
       {balance > 0 ? (
@@ -392,6 +404,7 @@ function RevisionForm({ order, garment }: { order: ArchiveOrderRow; garment: boo
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const [customerName, setCustomerName] = useState(order.customer_name);
   const [qty, setQty] = useState(order.qty_to_print ?? 0);
   const [totalAmt, setTotalAmt] = useState(Number(order.total_amount ?? 0));
   const [depositAmt, setDepositAmt] = useState(Number(order.deposit_amount ?? 0));
@@ -407,6 +420,7 @@ function RevisionForm({ order, garment }: { order: ArchiveOrderRow; garment: boo
     setSuccess(null);
     startTransition(async () => {
       const result = await reviseOrder(order.id, {
+        customerName,
         qtyToPrint: qty,
         totalAmount: totalAmt,
         depositAmount: depositAmt,
@@ -435,6 +449,24 @@ function RevisionForm({ order, garment }: { order: ArchiveOrderRow; garment: boo
           <strong>Pending Revision Approval</strong> and re-route it to the Authorization Center
           for fresh management sign-off. The original Job Order No. and Batch Reference are
           preserved for audit traceability.
+        </div>
+      </div>
+
+      <div className="mb-2 text-sm font-bold text-at-navy">Client Identity</div>
+      <div className="mb-4">
+        <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+          Customer Name
+        </label>
+        <input
+          type="text"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          className="w-full max-w-md rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+        />
+        <div className="mt-1 text-xs text-at-slate">
+          {order.client_id
+            ? "This order is linked to a real client record — correcting the name here updates that client's canonical record, so the fix applies everywhere that client is referenced going forward (Sales Rep Dashboard, future orders, Global Search), not just this order."
+            : "This order has no linked client record — the name is corrected on this order only."}
         </div>
       </div>
 

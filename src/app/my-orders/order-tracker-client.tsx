@@ -8,6 +8,7 @@ import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
 import { parseLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 
 const CURRENCY = "GH₵";
@@ -31,6 +32,8 @@ export interface JobOrderRow extends GarmentClassifiable {
   approval_date: string | null;
   parent_group_id: string | null;
   rejection_note: string | null;
+  is_sample: boolean;
+  sample_reason: string | null;
 }
 
 export interface JobRow {
@@ -597,11 +600,16 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
           <div className="text-[1.35rem] font-extrabold tracking-tight text-at-accent">{orderNo}</div>
           <div className="mt-0.5 text-sm font-semibold text-slate-600">{customer}</div>
         </div>
-        <div
-          className="rounded-full border px-3.5 py-1.5 text-xs font-bold tracking-wide"
-          style={{ color, backgroundColor: bg, borderColor: `${color}33` }}
-        >
-          {label}
+        <div className="flex items-center gap-2">
+          {order.is_sample && (
+            <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+          )}
+          <div
+            className="rounded-full border px-3.5 py-1.5 text-xs font-bold tracking-wide"
+            style={{ color, backgroundColor: bg, borderColor: `${color}33` }}
+          >
+            {label}
+          </div>
         </div>
       </div>
 

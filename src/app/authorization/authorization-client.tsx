@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { approveOrder, rejectOrder } from "./actions";
 
@@ -15,6 +16,8 @@ export interface PendingOrderRow extends GarmentClassifiable {
   telephone_number: string | null;
   parent_group_id: string | null;
   status: string | null;
+  is_sample: boolean;
+  sample_reason: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
   created_by: string | null;
@@ -407,8 +410,11 @@ function LineItemCard({
 
       <div className="mb-5 flex flex-col gap-3 border-b-2 border-at-navy pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-1 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate-light">
+          <div className="mb-1 flex items-center gap-2 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate-light">
             Pending Authorization
+            {order.is_sample && (
+              <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+            )}
           </div>
           <div className="text-2xl font-extrabold tracking-tight text-at-navy">{customer}</div>
           <div className="mt-0.5 text-sm font-semibold text-at-slate">
