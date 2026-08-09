@@ -4,7 +4,7 @@ import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, RAISE_ORDER_ROLES, hasRole } from "@/lib/nav-config";
-import { RaiseOrderClient, type ResubmitOrderData, type ClientOption } from "./raise-order-client";
+import { RaiseOrderClient, type ResubmitOrderData, type ClientOption, type SampleOption } from "./raise-order-client";
 import { getSalesReps } from "@/lib/sales-reps";
 
 // Hand-off from My Order Tracker's "Modify & Resubmit" link
@@ -39,6 +39,21 @@ async function getClients(): Promise<ClientOption[]> {
   return (data ?? []) as ClientOption[];
 }
 
+// Samples a new order can be linked to as its conversion. Scoped HERE
+// (not in the client component) to awaiting-decision samples only —
+// Complimentary samples never convert by definition, so they must
+// never reach the picker.
+async function getLinkableSamples(): Promise<SampleOption[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("job_orders")
+    .select("id, job_order_no, customer_name, order_date")
+    .eq("is_sample", true)
+    .eq("sample_reason", "Awaiting Customer Decision")
+    .order("order_date", { ascending: false });
+  return (data ?? []) as SampleOption[];
+}
+
 export default async function RaiseOrderPage({
   searchParams,
 }: {
@@ -56,8 +71,10 @@ export default async function RaiseOrderPage({
     allowed && resubmitId !== null && !Number.isNaN(resubmitId)
       ? await getResubmitOrder(resubmitId, user.email)
       : null;
-  const [clients, salesReps] =
-    allowed && !resubmitOrder ? await Promise.all([getClients(), getSalesReps()]) : [[], []];
+  const [clients, salesReps, linkableSamples] =
+    allowed && !resubmitOrder
+      ? await Promise.all([getClients(), getSalesReps(), getLinkableSamples()])
+      : [[], [], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
@@ -80,6 +97,7 @@ export default async function RaiseOrderPage({
             resubmitOrder={resubmitOrder}
             clients={clients}
             salesReps={salesReps}
+            linkableSamples={linkableSamples}
           />
         </>
       )}

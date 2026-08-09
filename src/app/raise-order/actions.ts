@@ -87,6 +87,11 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   const isNewClient = formData.get("isNewClient") === "true";
   const clientEmail = String(formData.get("clientEmail") ?? "").trim();
   const clientIdRaw = String(formData.get("clientId") ?? "").trim();
+  const convertedFromSampleIdRaw = String(formData.get("convertedFromSampleId") ?? "").trim();
+  const convertedFromSampleId =
+    convertedFromSampleIdRaw && !Number.isNaN(Number(convertedFromSampleIdRaw))
+      ? Number(convertedFromSampleIdRaw)
+      : null;
   const itemsJson = String(formData.get("items") ?? "[]");
   const sampleAttached = String(formData.get("sampleAttached") ?? "No");
   const sampleWith = String(formData.get("sampleWith") ?? "").trim();
@@ -225,6 +230,7 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
       customer_name: clientName,
       telephone_number: clientPhone,
       client_id: resolvedClientId,
+      converted_from_sample_id: convertedFromSampleId,
       parent_group_id: pgid,
       status: "Pending Approval",
       // Matches My Order Tracker's created_by-by-email convention.

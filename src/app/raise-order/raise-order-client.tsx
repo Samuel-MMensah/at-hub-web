@@ -207,6 +207,18 @@ export interface ClientOption {
   email: string | null;
 }
 
+// A prior sample a new order can be linked to as its conversion.
+// Deliberately scoped upstream (raise-order/page.tsx's query) to
+// is_sample=true AND sample_reason='Awaiting Customer Decision' —
+// Complimentary samples never convert by definition, so they must
+// never reach this picker.
+export interface SampleOption {
+  id: number;
+  job_order_no: string | null;
+  customer_name: string | null;
+  order_date: string | null;
+}
+
 const NEW_CLIENT_VALUE = "__new_client__";
 
 // Same search+select pattern as Material Issuance's order picker
@@ -419,6 +431,65 @@ function SampleOrderFields({
   );
 }
 
+// Batch-level (not per-item): optional link back to the awaiting-decision
+// sample this whole order converts from. Same search-input-above-a-select
+// pattern as Invoice Entry's order picker. The `samples` list is already
+// scoped to convertible samples by page.tsx's query, so no reason to
+// re-filter by sample_reason here.
+function SampleLinkSection({
+  samples,
+  search,
+  setSearch,
+  selectedSampleId,
+  setSelectedSampleId,
+}: {
+  samples: SampleOption[];
+  search: string;
+  setSearch: (v: string) => void;
+  selectedSampleId: number | "";
+  setSelectedSampleId: (v: number | "") => void;
+}) {
+  const q = search.trim().toLowerCase();
+  const candidates = q
+    ? samples.filter(
+        (s) =>
+          (s.job_order_no ?? "").toLowerCase().includes(q) ||
+          (s.customer_name ?? "").toLowerCase().includes(q)
+      )
+    : samples;
+
+  return (
+    <FormField label="Link to a previous sample? (optional)">
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search a prior sample by order no. or customer name"
+        className="mb-2 w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+      />
+      <select
+        value={selectedSampleId}
+        onChange={(e) => setSelectedSampleId(e.target.value === "" ? "" : Number(e.target.value))}
+        className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+      >
+        <option value="">— Not a sample conversion —</option>
+        {candidates.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.job_order_no || "—"} — {s.customer_name || "—"}
+            {s.order_date ? ` · ${s.order_date}` : ""}
+          </option>
+        ))}
+      </select>
+      {samples.length === 0 && (
+        <div className="mt-2 text-xs text-at-slate">No awaiting-decision samples on record yet.</div>
+      )}
+      {samples.length > 0 && candidates.length === 0 && search.trim() && (
+        <div className="mt-2 text-xs text-at-slate">No sample matches your search.</div>
+      )}
+    </FormField>
+  );
+}
+
 // Full original job_orders row for the order being resubmitted — every
 // _rd()/_rdf()/_rdi()/_rdd()/_rdl() call in both resubmit forms
 // (app.py) reads straight off resubmit_data, which is the ENTIRE
@@ -482,11 +553,13 @@ export function RaiseOrderClient({
   resubmitOrder,
   clients,
   salesReps,
+  linkableSamples,
 }: {
   userEmail: string;
   resubmitOrder: ResubmitOrderData | null;
   clients: ClientOption[];
   salesReps: SalesRepOption[];
+  linkableSamples: SampleOption[];
 }) {
   const [department, setDepartment] = useState<"PRESS" | "GARMENT">("PRESS");
 
@@ -535,9 +608,9 @@ export function RaiseOrderClient({
       <div className="mb-4 text-lg font-bold text-at-navy-soft">{department} Job Order Entry</div>
 
       {department === "PRESS" ? (
-        <PressCart userEmail={userEmail} clients={clients} salesReps={salesReps} />
+        <PressCart userEmail={userEmail} clients={clients} salesReps={salesReps} linkableSamples={linkableSamples} />
       ) : (
-        <GarmentCart userEmail={userEmail} clients={clients} salesReps={salesReps} />
+        <GarmentCart userEmail={userEmail} clients={clients} salesReps={salesReps} linkableSamples={linkableSamples} />
       )}
     </div>
   );
@@ -687,10 +760,12 @@ function PressCart({
   userEmail,
   clients,
   salesReps,
+  linkableSamples,
 }: {
   userEmail: string;
   clients: ClientOption[];
   salesReps: SalesRepOption[];
+  linkableSamples: SampleOption[];
 }) {
   // Lazy initializer — same purity reasoning as every other Date-based
   // default in this codebase (GanttChart's `now`, Shop Floor's
@@ -702,6 +777,8 @@ function PressCart({
   const [cartClientName, setCartClientName] = useState("");
   const [cartClientPhone, setCartClientPhone] = useState("");
   const [cartClientEmail, setCartClientEmail] = useState("");
+  const [sampleLinkSearch, setSampleLinkSearch] = useState("");
+  const [linkedSampleId, setLinkedSampleId] = useState<number | "">("");
   const [cartItems, setCartItems] = useState<PressCartItem[]>([]);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
@@ -752,6 +829,8 @@ function PressCart({
     setCartClientName("");
     setCartClientPhone("");
     setCartClientEmail("");
+    setSampleLinkSearch("");
+    setLinkedSampleId("");
     setEditingIdx(null);
   }
 
@@ -870,6 +949,10 @@ function PressCart({
     // client and uses ITS id instead (see submitBatch).
     fd.set("clientId", typeof selectedClientId === "number" ? String(selectedClientId) : "");
     fd.set("clientEmail", cartClientEmail);
+    // Optional sample-conversion link — batch-level, applied to every
+    // row of this submission by submitBatch. Empty string = not a
+    // conversion.
+    fd.set("convertedFromSampleId", linkedSampleId === "" ? "" : String(linkedSampleId));
     fd.set("items", JSON.stringify(cartItems));
     fd.set("sampleAttached", attachments.sampleAttached);
     fd.set("sampleWith", attachments.sampleWith);
@@ -894,6 +977,8 @@ function PressCart({
       setCartClientName("");
       setCartClientPhone("");
       setCartClientEmail("");
+      setSampleLinkSearch("");
+      setLinkedSampleId("");
       setEditingIdx(null);
       setAttachments(blankAttachmentsTerms());
     });
@@ -938,6 +1023,16 @@ function PressCart({
           clientEmail={cartClientEmail}
           setClientEmail={setCartClientEmail}
         />
+
+        <div className="mt-3">
+          <SampleLinkSection
+            samples={linkableSamples}
+            search={sampleLinkSearch}
+            setSearch={setSampleLinkSearch}
+            selectedSampleId={linkedSampleId}
+            setSelectedSampleId={setLinkedSampleId}
+          />
+        </div>
 
         <SectionHeader>Product Item Specifications</SectionHeader>
         <div className="mb-3">
@@ -1496,10 +1591,12 @@ function GarmentCart({
   userEmail,
   clients,
   salesReps,
+  linkableSamples,
 }: {
   userEmail: string;
   clients: ClientOption[];
   salesReps: SalesRepOption[];
+  linkableSamples: SampleOption[];
 }) {
   const [today] = useState(() => todayLocalDateStr());
 
@@ -1508,6 +1605,8 @@ function GarmentCart({
   const [cartClientName, setCartClientName] = useState("");
   const [cartClientPhone, setCartClientPhone] = useState("");
   const [cartClientEmail, setCartClientEmail] = useState("");
+  const [sampleLinkSearch, setSampleLinkSearch] = useState("");
+  const [linkedSampleId, setLinkedSampleId] = useState<number | "">("");
   const [cartItems, setCartItems] = useState<GarmentCartItem[]>([]);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
@@ -1541,6 +1640,8 @@ function GarmentCart({
     setCartClientName("");
     setCartClientPhone("");
     setCartClientEmail("");
+    setSampleLinkSearch("");
+    setLinkedSampleId("");
     setEditingIdx(null);
   }
 
@@ -1655,6 +1756,10 @@ function GarmentCart({
     // client and uses ITS id instead (see submitBatch).
     fd.set("clientId", typeof selectedClientId === "number" ? String(selectedClientId) : "");
     fd.set("clientEmail", cartClientEmail);
+    // Optional sample-conversion link — batch-level, applied to every
+    // row of this submission by submitBatch. Empty string = not a
+    // conversion.
+    fd.set("convertedFromSampleId", linkedSampleId === "" ? "" : String(linkedSampleId));
     fd.set("items", JSON.stringify(cartItems));
     fd.set("sampleAttached", attachments.sampleAttached);
     fd.set("sampleWith", attachments.sampleWith);
@@ -1679,6 +1784,8 @@ function GarmentCart({
       setCartClientName("");
       setCartClientPhone("");
       setCartClientEmail("");
+      setSampleLinkSearch("");
+      setLinkedSampleId("");
       setEditingIdx(null);
       setAttachments(blankAttachmentsTerms());
     });
@@ -1723,6 +1830,16 @@ function GarmentCart({
           clientEmail={cartClientEmail}
           setClientEmail={setCartClientEmail}
         />
+
+        <div className="mt-3">
+          <SampleLinkSection
+            samples={linkableSamples}
+            search={sampleLinkSearch}
+            setSearch={setSampleLinkSearch}
+            selectedSampleId={linkedSampleId}
+            setSelectedSampleId={setLinkedSampleId}
+          />
+        </div>
 
         <SectionHeader>Item Description &amp; Financial</SectionHeader>
         <div className="mb-3">
