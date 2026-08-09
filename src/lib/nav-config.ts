@@ -11,6 +11,7 @@ import {
   Archive,
   History,
   TrendingUp,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react";
 
@@ -91,6 +92,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "My Sales Dashboard", href: "/my-sales-dashboard", icon: TrendingUp, requiresSalesRep: true },
       { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, ...WAREHOUSE_ROLES] },
       { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
+      { label: "Samples", href: "/samples", icon: FlaskConical, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },
       { label: "Approved Orders Archive", href: "/archive", icon: Archive, roles: ADMIN_ROLES },
       { label: "Audit Log", href: "/audit-log", icon: History },
