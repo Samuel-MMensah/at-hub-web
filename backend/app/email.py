@@ -843,6 +843,41 @@ def handle_overdue_alert(order_id: int) -> dict:
     return {"claimed": True, "sent": sent}
 
 
+ATTACHMENT_BUCKET = "job-attachments"
+ATTACHMENT_URL_TTL_SECONDS = 60 * 60  # 1 hour — signed fresh on every send
+
+
+def _sign_attachment_fields(row: dict) -> dict:
+    """Return a shallow copy of an order row with lpo_file_url /
+    sample_file_url replaced by a FRESHLY minted signed URL.
+
+    These columns store the raw Storage object PATH (the bucket is
+    private). The signed URL is generated at send time, every time, so an
+    email never carries a stale/expired link — the TTL only has to
+    outlive the recipient's click, not the order's lifetime. A legacy
+    value that is already a full URL (pre-migration historical rows) is
+    passed through unchanged; a value that can't be signed is dropped to
+    None so the email omits the row rather than printing a dead link."""
+    signed = dict(row)
+    storage = get_supabase().storage.from_(ATTACHMENT_BUCKET)
+    for field in ("lpo_file_url", "sample_file_url"):
+        value = signed.get(field)
+        if not value:
+            continue
+        if isinstance(value, str) and value.startswith("http"):
+            # Legacy stored URL (pre-migration) — leave as-is.
+            continue
+        try:
+            res = storage.create_signed_url(value, ATTACHMENT_URL_TTL_SECONDS)
+            signed[field] = res.get("signedURL") or res.get("signedUrl")
+        except Exception:
+            logger.exception(
+                "Failed to sign attachment %s=%r; omitting from email.", field, value
+            )
+            signed[field] = None
+    return signed
+
+
 def handle_order_submitted(order_ids: list[int]) -> dict:
     """Extracted out of the FastAPI route, same "directly callable, no
     HTTP layer" pattern as handle_overdue_alert -- used by both the
@@ -872,6 +907,9 @@ def handle_order_submitted(order_ids: list[int]) -> dict:
 
     payload = dict(first)
     payload["total_amount"] = sum(float(row.get("total_amount") or 0) for row in res.data)
+    # Bucket is private — mint a fresh signed URL for the LPO link now, at
+    # send time, from the raw path stored on the row.
+    payload = _sign_attachment_fields(payload)
 
     sent = notify_new_order_submitted(payload)
     return {"sent": sent}
@@ -890,6 +928,9 @@ def handle_order_approved(order_id: int) -> dict:
         return {"error": f"job_orders row not found for id={order_id}"}
 
     ticket = res.data[0]
+    # Bucket is private — mint a fresh signed URL for the Sample Photo link
+    # now, at send time, from the raw path stored on the row.
+    ticket = _sign_attachment_fields(ticket)
 
     try:
         approved_sent = notify_order_approved(ticket)

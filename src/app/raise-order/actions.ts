@@ -28,12 +28,46 @@ function todayLocalDateStr(): string {
   return `${y}-${m}-${d}`;
 }
 
+// Real document/image types the business actually attaches (LPOs, sample
+// photos): PDF, JPEG, PNG — matching the UI's `accept` hint, but now actually
+// enforced. Validated server-side two ways: here by sniffing the file's own
+// magic bytes (NOT trusting the declared Content-Type, which a client can
+// forge), and again at the Storage bucket level (allowed_mime_types +
+// file_size_limit) so a direct-to-storage client can't bypass it either.
+const ALLOWED_UPLOAD_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Detect the true content type from the leading bytes. Returns the canonical
+// MIME only for the three allowed types; null for anything else — including a
+// file whose declared type lies about what it really is (e.g. malware.exe
+// sent as application/pdf).
+function sniffAllowedMime(bytes: Uint8Array): string | null {
+  if (bytes.length >= 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+    return "application/pdf"; // "%PDF"
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg"; // JPEG SOI + marker
+  }
+  if (
+    bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
+  ) {
+    return "image/png"; // PNG signature
+  }
+  return null;
+}
+
 // Reusable upload helper — genuinely new infrastructure for this app
 // (no prior route has written to Supabase Storage). Mirrors
-// _upload_batch_file/_upload_g_batch_file (app.py) exactly: uploads to
-// the 'job-attachments' bucket under `${pathPrefix}/${filename}`,
-// returns the public URL. On ANY failure, returns a warning instead of
-// throwing — an upload failure must never block the rest of the batch
+// _upload_batch_file/_upload_g_batch_file (app.py): uploads to the
+// 'job-attachments' bucket under `${pathPrefix}/${filename}`, now with
+// server-side type/size validation. Returns the raw object PATH (stored in
+// lpo_file_url/sample_file_url) — NOT a URL: the bucket is private, so every
+// consumer (the approval email in backend/app/email.py, Archive's detail
+// view) mints a FRESH signed URL at display/send time rather than relying on
+// a stored one that would expire within 7 days.
+// On ANY failure — including a rejected file — returns a warning instead of
+// throwing, so an upload problem never blocks the rest of the batch
 // submission, matching the source's own comment verbatim ("order will
 // still submit without it").
 async function uploadBatchFile(
@@ -44,13 +78,24 @@ async function uploadBatchFile(
 ): Promise<{ url: string | null; warning?: string }> {
   if (!file || file.size === 0) return { url: null };
   try {
+    // Size cap — enforced here and at the bucket (file_size_limit).
+    if (file.size > MAX_UPLOAD_BYTES) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
+      return { url: null, warning: `${label} rejected (order still submitted without it): file is ${mb}MB, over the 10MB limit.` };
+    }
+    // Real content-type check by magic bytes — do NOT trust file.type.
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const realMime = sniffAllowedMime(bytes);
+    if (!realMime || !ALLOWED_UPLOAD_MIME.has(realMime)) {
+      return { url: null, warning: `${label} rejected (order still submitted without it): only PDF, JPG or PNG files are allowed.` };
+    }
     const path = `${pathPrefix}/${file.name}`;
     const { error } = await supabase.storage
       .from("job-attachments")
-      .upload(path, file, { contentType: file.type || "application/octet-stream" });
+      .upload(path, file, { contentType: realMime });
     if (error) throw error;
-    const { data } = supabase.storage.from("job-attachments").getPublicUrl(path);
-    return { url: data.publicUrl };
+    // Store the raw object PATH — consumers sign on demand (see docstring).
+    return { url: path };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { url: null, warning: `${label} upload failed (order will still submit without it): ${message}` };

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
-import { recordPayment, reviseOrder, deleteMasterOrder, reopenOrder } from "./actions";
+import { recordPayment, reviseOrder, deleteMasterOrder, reopenOrder, getAttachmentSignedUrl } from "./actions";
 
 const CURRENCY = "GH₵";
 
@@ -25,6 +25,9 @@ export interface ArchiveOrderRow extends GarmentClassifiable {
   qty_to_print: number | null;
   date_of_collection: string | null;
   approved_by: string | null;
+  // Raw Storage object PATH (bucket is private) — signed on demand for viewing.
+  lpo_file_url: string | null;
+  sample_file_url: string | null;
 }
 
 // Ports the edit form's category dropdown exactly (app.py:5177-5191):
@@ -392,9 +395,59 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
         />
       </div>
 
+      <AttachmentsSection order={order} />
       <RevisionForm order={order} garment={garment} />
       <DeleteMasterOrderSection order={order} />
       {order.status === "Delivered" && <ReopenOrderSection order={order} />}
+    </div>
+  );
+}
+
+// One attachment link. The bucket is private and the stored value is a raw
+// object path, so the signed URL is fetched FRESH from the server on click
+// (never a stored, expiring value) and opened in a new tab.
+function AttachmentLink({ pathOrUrl, label, icon }: { pathOrUrl: string; label: string; icon: string }) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function open() {
+    setError(null);
+    startTransition(async () => {
+      const result = await getAttachmentSignedUrl(pathOrUrl);
+      if (result.error || !result.url) {
+        setError(result.error ?? "Could not open this attachment.");
+        return;
+      }
+      window.open(result.url, "_blank", "noopener,noreferrer");
+    });
+  }
+
+  return (
+    <div>
+      <Button variant="secondary" disabled={isPending} onClick={open}>
+        {isPending ? "Opening…" : `${icon} ${label}`}
+      </Button>
+      {error && <div className="mt-1 text-xs font-semibold text-red-600">{error}</div>}
+    </div>
+  );
+}
+
+function AttachmentsSection({ order }: { order: ArchiveOrderRow }) {
+  if (!order.lpo_file_url && !order.sample_file_url) return null;
+  return (
+    <div className="mt-5 border-t border-at-border pt-4">
+      <div className="mb-2 text-sm font-bold text-at-navy">📎 Attachments</div>
+      <div className="flex flex-wrap gap-3">
+        {order.lpo_file_url && (
+          <AttachmentLink pathOrUrl={order.lpo_file_url} label="View LPO" icon="📄" />
+        )}
+        {order.sample_file_url && (
+          <AttachmentLink pathOrUrl={order.sample_file_url} label="View Sample Photo" icon="🖼️" />
+        )}
+      </div>
+      <div className="mt-1.5 text-[0.7rem] text-at-slate">
+        Opens a fresh, time-limited secure link (generated on click).
+      </div>
     </div>
   );
 }

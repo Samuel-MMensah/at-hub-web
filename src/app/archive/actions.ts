@@ -17,6 +17,26 @@ async function requireArchiveAccess() {
   return user;
 }
 
+// Mints a FRESH signed URL for an order attachment (LPO / sample photo) at the
+// moment Archive's detail view needs it. The bucket is private and
+// lpo_file_url/sample_file_url store the raw object PATH, so the URL is
+// generated on demand through the caller's own (admin-gated) session rather
+// than read from a stored value that would expire. A legacy value that is
+// already a full URL (pre-migration rows) is returned unchanged.
+export async function getAttachmentSignedUrl(
+  pathOrUrl: string
+): Promise<{ url?: string; error?: string }> {
+  await requireArchiveAccess();
+  if (!pathOrUrl) return { error: "No attachment on this order." };
+  if (pathOrUrl.startsWith("http")) return { url: pathOrUrl };
+  const supabase = await createClient();
+  const { data, error } = await supabase.storage
+    .from("job-attachments")
+    .createSignedUrl(pathOrUrl, 60 * 60); // 1 hour, generated fresh each click
+  if (error || !data) return { error: "Could not open this attachment." };
+  return { url: data.signedUrl };
+}
+
 // FIXED — same vulnerability class just closed in Dispatch's
 // recordPayment and job_invoices' recordInvoicePayment: this
 // previously took a client-computed newDepositTotal (deposit + payAmt
