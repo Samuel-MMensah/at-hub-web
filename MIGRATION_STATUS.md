@@ -1107,7 +1107,13 @@ synthetic client's exact name) was blocked with the real client's
 phone/email in the error, no merge; unlinked-order path updated only
 that order, `clients` row count unchanged.
 
-## Sample / No Charge orders
+## Sample / No Charge orders, conversion tracking, and the Samples view
+
+One arc, three parts, built in sequence: mark an order as a
+sample/no-charge job; link a later real order back to the sample it
+converts from; and a dedicated Samples view reporting on all of it.
+
+### Part 1 — Sample / No Charge orders
 
 Raise Job Order (`src/app/raise-order/`) can mark any cart item as a
 sample / no-charge job instead of a real paying one — two reasons,
@@ -1190,6 +1196,106 @@ header), My Order Tracker, and Authorization Center — all five read
 `is_sample`/`sample_reason` off the same `job_orders` row their other
 fields already come from, no separate query.
 
+### Part 2 — Sample-to-order conversion linkage
+
+`job_orders.converted_from_sample_id BIGINT REFERENCES job_orders(id)`
+links a real follow-up order back to the sample it converts from.
+**No UNIQUE constraint, deliberately** — one sample can lead to more
+than one follow-up over time, so this is not a guaranteed 1:1.
+
+Raise Job Order's cart forms carry a batch-level "Link to a previous
+sample?" picker (search-input-above-a-select, same pattern as Invoice
+Entry's order picker). Its list is scoped **server-side**
+(`raise-order/page.tsx`'s `getLinkableSamples`) to `is_sample = true
+AND sample_reason = 'Awaiting Customer Decision'` — Complimentary
+samples never convert by definition, so they never reach the picker.
+`submitBatch` writes the selected id onto every row of the submission.
+
+**`sample_conversion_status` is the single source of "counts as
+converted" — reused everywhere, re-derived nowhere.** The rule: a
+sample is converted iff it has at least one linked follow-up whose
+status has reached `'Approved'` or beyond (`Approved`, `In
+Production`, `At Warehouse`, `Delivered`) — `Pending Approval` and
+`Rejected` deliberately excluded. That status set is verified complete
+against live data (those four are the only post-approval statuses that
+actually exist; `'Ready for Collection'` is an Archive tab label never
+written to a real row). The view later gained two columns
+(`converted_order_id`/`converted_job_order_no`) so the Samples list
+can link to the converting order without any consumer re-implementing
+the status set; `is_converted` is derived from the same `LEFT JOIN
+LATERAL` that finds that order, so the rule lives in exactly one
+expression.
+
+Verified live, not just reasoned about: a sample with a follow-up
+still at `Pending Approval` reads **not** converted; approving that
+follow-up flips it to converted; and a control sample whose only
+follow-up is `Rejected` correctly stays **not** converted.
+
+**FK-blocks-delete finding**: because `converted_from_sample_id` is a
+real FK to `job_orders(id)`, a sample that has follow-up orders
+pointing at it **cannot be deleted** — Postgres blocks it. So Archive's
+"Delete Master Order" refuses to delete a converted sample until its
+follow-ups are gone. This is desirable referential integrity, not a
+bug — surfaced live when a test-cleanup routine tried to delete parent
+samples before their child follow-ups and got blocked, which is
+exactly the protection working.
+
+### Part 3 — The Samples view (`/samples`)
+
+New route, gated `ADMIN_ROLES | FINANCE_ROLES` (matching who sees
+financial/reporting data elsewhere), with its own nav item.
+`src/app/samples/`.
+
+- **List** — every `is_sample` order, one of three real states:
+  **"Awaiting Decision"** (convertible, no approved follow-up yet),
+  **"Converted"** (per the view above), **"Complimentary — Closed"**
+  (Complimentary reason). Converted rows link to the follow-up order.
+  Month-grouped via `CollapsibleMonthGroup`, same as every other
+  history table here.
+- **Trend chart** — Samples Raised vs. Converted per week/month (same
+  bucketing/toggle + validated palette as Revenue Analysis's trend).
+  A cohort view: each sample is counted in the period it was *raised*,
+  and Converted is the subset of that period now converted, so
+  Converted is always ≤ Raised within a period.
+- **30-day maturity window, as a visible caveat — not a silent gap.**
+  The conversion-rate headline figure counts only awaiting-decision
+  samples raised **more than 30 days ago**: one raised yesterday
+  hasn't had a fair chance to convert, so including it would understate
+  the real rate. Complimentary samples are excluded too (they never
+  convert). When nothing is mature enough yet, the card shows "—" and
+  says why, rather than a misleading 0% — same honesty posture as AR
+  Aging's "aged by original invoice date" caption. Verified: a
+  hand-computed **1 of 3 mature convertible = 33%** matched the page's
+  own computation exactly, and a converted-but-only-5-days-old sample
+  was correctly excluded from the rate while still appearing in the
+  chart.
+- **CSV export**, same `downloadCsv` pattern as every other list/report.
+
+### security_invoker was re-verified TWICE — a view modification demands it
+
+`sample_conversion_status` is created `WITH (security_invoker = true)`
+so it runs under the querying user's own `job_orders` RLS, not as its
+privileged creator — the lesson `stock_balance` taught this project
+once already (a view defaults to `SECURITY DEFINER` and silently
+bypasses RLS; see the Materials section).
+
+This property was verified **empirically twice across this arc**: once
+at the view's creation, and **again after it was extended via `CREATE
+OR REPLACE`** to add the converting-order columns. Both times the same
+decisive test: an **anon** (unauthenticated) query against the view
+returned `401 permission denied for table job_orders` — *identical* to
+a direct `job_orders` query with the same key (a `SECURITY DEFINER`
+view would instead have leaked the rows as its creator), and a
+disposable Guest session saw exactly what its own direct `job_orders`
+query returned, row for row.
+
+The point worth stating plainly: **`CREATE OR REPLACE VIEW` does not
+carry forward the reasoning that made the original safe.** The `WITH
+(security_invoker = true)` clause has to be re-declared on every
+replace, and — given the `stock_balance` precedent — re-*verified*
+every time, not assumed to have survived the edit. Confirmed, not
+assumed, on both passes.
+
 ## Shared infrastructure
 
 - `isGarment()` (ports `_is_garment()` from app.py) lives in
@@ -1222,17 +1328,211 @@ fields already come from, no separate query.
 - Supabase Storage file uploads — genuinely new infrastructure, no
   prior route wrote to Storage. `uploadBatchFile()` (local to
   `src/app/raise-order/actions.ts` for now, only one caller) uploads to
-  the `job-attachments` bucket (confirmed live to already exist,
-  public) and returns a public URL, or a non-fatal warning string on
+  the `job-attachments` bucket (now **private**, with a 10 MB cap and a
+  PDF/JPG/PNG allowlist — see "Security hardening pass") after
+  magic-byte validation, and returns the raw object **path** (consumers
+  sign a fresh URL at use-time), or a non-fatal warning string on
   failure — never throws, matching the source's graceful-degradation
   posture for LPO/sample attachments exactly.
 
+## Security hardening pass — review, job_orders RLS, storage, and one deferred CVE
+
+One diagnostic security review — disposable accounts, real sessions,
+non-destructive probes against live data, **not** automated scanning of
+production — surfaced five findings. Three became fixes and one a
+deliberate deferral (the fifth came back clean). Every fix was verified
+the same way its exposure was proven: run through a real user session,
+then **independently re-read from the database/storage** to confirm the
+actual state (never trusting an API's own success response), then all
+test data and accounts cleaned up. One arc, four parts.
+
+### Part 1 — The review (five tests, real numbers)
+
+1. **Login rate limiting — flagged, not fixed.** 20 consecutive
+   wrong-password attempts on a disposable account: no `429`, no
+   lockout, and the correct password still logged in immediately
+   afterwards. There is no account throttling/lockout at the auth layer
+   (Supabase-side). Reported; no fix requested this pass — still open.
+2. **`job_orders` RLS — CRITICAL, fixed (Part 2).** A disposable
+   **Guest** session could read every order (80 orders, 50 distinct
+   customers, **GH₵1,662,322.65** of contract value visible), **INSERT**
+   a new order (`201`), and **UPDATE** an existing one — a probe row's
+   `customer_name` was actually changed to `"HACKED BY GUEST"`, confirmed
+   by an independent service-role re-fetch, not just the `200`. DELETE
+   was already blocked. Confirmed live data exposure *and* tampering.
+3. **`job-attachments` storage — fixed (Part 3).** The bucket was
+   `public: true` (any file readable by anonymous GET), with **no** MIME
+   validation (`malware.exe` and `.txt` uploaded fine) and **no** size
+   cap (a 15 MB file uploaded fine).
+4. **`npm audit` — deferred (Part 4).** 6 high advisories; the runtime
+   one is `sharp`.
+5. **Logout — clean, no fix needed.** After `signOut()`, the old access
+   token returned `401` and the old refresh token was rejected — the
+   session is genuinely invalidated server-side, not just cleared
+   client-side.
+
+### Part 2 — `job_orders` RLS (Option A: role allowlists)
+
+**Audit first (never guess the write pattern).** Every Server Action
+that writes `job_orders` already runs on the **caller's own session**
+(the `@/lib/supabase/server` anon client + cookie) — the service-role
+key is never used in the Next.js app — so RLS was already in the request
+path; it was simply too permissive to enforce anything. The real
+application-layer gates, per action:
+- **INSERT**: `raise-order` `submitBatch`/`resubmitOrder` —
+  `requireUser()` only (page-gated to `ADMIN ∪ RAISE_ORDER`).
+- **UPDATE**: `authorization` (ADMIN), **`production-board`
+  `startProduction`/`sendToWarehouse` — `requireUser()` only, ANY
+  authenticated user** (ported "any authenticated" floor posture, held
+  by `Production_Press`/`Production_Garment`), `production-layout`
+  (ADMIN), `dispatch` (ADMIN ∪ FINANCE), `archive` (ADMIN), `warehouse`
+  (ADMIN ∪ WAREHOUSE).
+- **DELETE**: `archive` `deleteMasterOrder` (ADMIN).
+
+**The design tension.** Postgres RLS is *row*-level, not *column*-level:
+it can allow/deny a whole UPDATE by who-you-are and by row values, but
+it **cannot** say "this role may change `status` but not
+`customer_name`." Production floor staff legitimately change exactly one
+thing (`status`), yet the exploit was a Guest changing `customer_name`.
+So a plain RLS allowlist can close the Guest hole but can't give
+per-column least-privilege — that would need a column-guard trigger
+(**Option B**, offered and deliberately deferred).
+
+**Applied (Option A) — SELECT deliberately left open** (Command Center /
+Production Board / Shop Floor read company-wide, an accepted tradeoff):
+- `INSERT` allowlist: `admin, manager, supervisor, md, fm, front desk,
+  operations`.
+- `UPDATE` allowlist: the above **∪** `finance, warehouse, scheduler,
+  production_press, production_garment` — i.e. every real writer role,
+  **excluding Guest**.
+- `DELETE` allowlist: `admin, manager, supervisor, md, fm`.
+All keyed on `lower(current_user_role())`; policies rebuilt from a
+clean drop so nothing permissive lingers.
+
+**Verified both directions, real status codes:**
+- Guest UPDATE `customer_name` → `HTTP 200, Content-Range */0, 0 rows`;
+  re-fetch shows the value **unchanged** (vs. `"HACKED BY GUEST"`
+  pre-fix). RLS blocks an excluded UPDATE by making the row
+  invisible-for-update — a 200-with-0-rows, *not* a 403 — so "blocked"
+  is proven by the row count **and** the untouched re-fetch, not the
+  status alone.
+- Guest UPDATE `status` (production-board path) → same 200/`*/0`,
+  unchanged. This is the **one deliberate behavior change**: a Guest can
+  no longer transition an order's status (a security improvement, not a
+  regression — Guests aren't floor staff).
+- Guest INSERT → `HTTP 403` (`42501: new row violates row-level security
+  policy`).
+- Legit paths all still work: Front Desk INSERT `201`; admin approve
+  `200/1 row`; Production_Press start + send-to-warehouse `200/1` each;
+  finance dispatch deposit + finalize `200/1` each; admin delete
+  `204`, row gone.
+
+**Residual (accepted):** coarse granularity — a *trusted* writer role
+(e.g. Production_Press hitting PostgREST directly) could still change
+any column, since RLS can't restrict columns. This does not re-open the
+Guest hole; closing it fully is Option B's column-guard trigger, left as
+optional hardening.
+
+### Part 3 — `job-attachments`: private bucket, real upload validation, signed-URL lifecycle
+
+**Bucket config** (via the Storage admin API, before→after verified):
+`public: true → false`, `file_size_limit: null → 10485760` (10 MB),
+`allowed_mime_types: null → ["application/pdf","image/jpeg","image/png"]`.
+
+**App-layer validation** (`raise-order` `uploadBatchFile`): a real
+content check by **magic bytes** (`sniffAllowedMime` — `%PDF`,
+`FFD8FF`, PNG signature), not the forgeable declared `Content-Type`,
+plus a 10 MB size check. Rejections stay non-fatal (the order still
+submits without the attachment), matching the source's
+graceful-degradation contract.
+
+**Original findings reproduced — now closed** (raw storage, disposable
+Front Desk session): `malware.exe` (`application/octet-stream`) →
+`HTTP 400, 415 invalid_mime_type`; `.txt` → `400`; a 15 MB file declared
+`application/pdf` (so only size can reject) → `400, 413 EntityTooLarge`;
+legit PDF and JPG → `200`. Anonymous public GET of an uploaded file →
+`400` (no longer public). Admin-session signed read → `200`, real
+`%PDF` bytes.
+
+**Honest boundary:** the bucket's `allowed_mime_types` checks the
+declared `Content-Type` *header*, not the bytes — an EXE uploaded
+*directly to storage* with a forged `application/pdf` header returns
+`200` (the bucket accepts it). The app's magic-byte sniff closes that
+for the app's own upload path; a determined authenticated user hitting
+storage directly with a spoofed header could still land a mislabeled
+(inert) file. Fully closing that is a storage-RLS/upload-proxy job, not
+done here.
+
+**Signed-URL lifecycle — the durable fix, not a stored expiring URL.**
+Privatizing the bucket meant `getPublicUrl` no longer resolves, so the
+columns' meaning changed: **`lpo_file_url`/`sample_file_url` now store
+the raw object PATH**, and every consumer mints a **fresh signed URL at
+use-time** (1-hour TTL — only has to outlive a click):
+- **Approval email** (`backend/app/email.py`): new `_sign_attachment_fields()`
+  signs the path at send time inside `handle_order_submitted` (LPO) and
+  `handle_order_approved` → `send_departmental_alert` (Sample). Legacy
+  full-URL values pass through; an unsignable value is dropped to `None`
+  so the email omits the row rather than printing a dead link.
+- **Archive detail view** — a **new display consumer**: Archive never
+  previously read these columns (the page query didn't even select
+  them). Added `getAttachmentSignedUrl` (admin-gated Server Action) and
+  a `📎 Attachments` section that signs on click. Verified live: stored
+  value is a raw path; admin-session sign → `200` real `%PDF`; a second
+  call mints a different token, also resolving (fresh-each-time).
+
+**Backfill of historical rows** (census reported before touching
+anything): of 83 `job_orders`, **18 rows** carried an attachment —
+16 `lpo_file_url`, 3 `sample_file_url`, **19 values total** (id 182 has
+both). All 19 were legacy public URLs, all path-recoverable, and all 19
+underlying objects confirmed present. An idempotent service-role script
+rewrote all 19 to raw paths (`204` each); a direct re-read confirmed
+**every value is now a path** (no `http://`, no `://`). Spot-checks
+through Archive's signing path pulled **real** content — id 153 (shared
+batch) PNG 54,736 B; id 182 LPO JPEG 129,022 B; id 182 Sample JPEG
+115,651 B; id 73 PDF 59,223 B — all `HTTP 200`. These files had been
+dead since the bucket went private; the backfill + fresh-signing makes
+all 18 orders' attachments viewable again.
+
+### Part 4 — Deferred dependency risk: `sharp` / libvips CVEs
+
+`npm audit`'s runtime finding is **`sharp`**
+(GHSA-f88m-g3jw-g9cj — libvips CVE-2026-33327/33328/35590/35591),
+investigated and **deliberately deferred**, not forgotten:
+- Installed `sharp` **0.34.5**; vulnerable range **`<0.35.0`**, so the
+  fix strictly needs **`>=0.35.0`**. The highest `0.34.x` published is
+  `0.34.5` — **no patch-level fix exists in the `0.34.x` line**.
+- `sharp` is **not** a direct dependency — only `next`'s
+  `optionalDependencies`. **`next@16.2.12`** (our pin) declares
+  `sharp: "^0.34.5"` (`<0.35.0`), which **forbids** `0.35.x`;
+  **`next@16.3.0`** relaxes it to `"^0.35.3"`. So an **isolated
+  `npm update sharp` is impossible**: it respects Next's `^0.34.5`
+  ceiling and no-ops. Forcing `0.35.x` via an override would contradict
+  Next 16.2.12's declared constraint (built/tested against 0.34.x) — an
+  unvetted mismatch we won't ship. The only real fix is bumping Next
+  (16.3.0, a non-major minor), which belongs to a planned Next.js
+  upgrade, not a same-day patch (heed `AGENTS.md`: this is a modified
+  Next).
+- **Actual exposure is low.** The CVEs fire when sharp processes a
+  malicious image, and sharp only runs on Next's on-demand
+  image-optimization path — which this app does **not** use: no
+  `next/image` / `<Image>` anywhere in `src/` (the only match is an
+  exclusion pattern in `proxy.ts`), no `images` config. The app's own
+  image handling (LPO/sample uploads) uses Supabase Storage with
+  magic-byte validation, not sharp. Sharp is installed but off any live
+  code path.
+- **Action:** revisit at the next planned Next.js upgrade (to
+  `next@16.3.0`+, which carries `sharp ^0.35.3`), then re-run
+  `npm audit` to confirm the advisory clears.
+
 ## What's NOT done yet
 
-- No RLS policies written yet. `nav-config.ts`'s `roles` arrays are the
-  intended source of truth to translate into Postgres RLS — right now,
-  access control is enforced by the app (session check + client-side nav
-  gating), not by the database.
+- **`job_orders` RLS is now enforced at the database** (Option A role
+  allowlists — see "Security hardening pass"). The broader goal of
+  translating every `nav-config.ts` `roles` array into Postgres RLS
+  across *all* tables is still open; `job_orders` was done first because
+  it was a confirmed live exposure. Other tables still rest on
+  app-layer gating (session check + client-side nav) until their
+  policies are written.
 - Raise Job Order's quick-fill from past customer
   (`get_recent_customers()`) — the one remaining piece of that route,
   deliberately deferred (see "Routes migrated"); every write-path phase
