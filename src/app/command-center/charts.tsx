@@ -483,19 +483,49 @@ function groupDepartmentPerformance(rows: DeptPerformanceRow[]): DeptStats[] {
 // reporting, not "current active work." See the caption rendered
 // below the table, and page.tsx's query comment, for why this is
 // intentional, not a bug.
-export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceRow[] }) {
-  const stats = useMemo(() => groupDepartmentPerformance(rows), [rows]);
+// (i) affordance next to the section heading — surfaces the scope caveats on
+// hover or click instead of as permanent page text.
+function InfoPopover({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label="About these figures"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-5 w-5 items-center justify-center rounded-full border border-at-border bg-at-white text-[0.7rem] font-bold italic leading-none text-at-slate transition-colors hover:border-at-accent hover:text-at-accent"
+      >
+        i
+      </button>
+      {open && (
+        <div
+          role="tooltip"
+          className="absolute left-7 top-0 z-20 w-72 rounded-at border border-at-border bg-at-white p-3 text-xs leading-relaxed text-at-slate shadow-at-md"
+        >
+          {children}
+        </div>
+      )}
+    </span>
+  );
+}
 
-  if (rows.length === 0) return null;
-
+// "Department" view — the 3 donuts + summary table. Unchanged mechanically;
+// larger/bolder value cells, quieter header labels.
+function DepartmentView({ stats }: { stats: DeptStats[] }) {
   const revenueData = stats.map((s) => ({ name: s.label, value: s.revenue, color: s.color }));
   const jobsData = stats.map((s) => ({ name: s.label, value: s.jobs, color: s.color }));
   const collectionsData = stats.map((s) => ({ name: s.label, value: s.collections, color: s.color }));
 
+  const th = "px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate";
+  const num = "whitespace-nowrap px-4 py-3 text-right text-base font-bold text-at-navy tabular-nums";
+
   return (
     <div>
-      <SectionHeader>Departmental Performance</SectionHeader>
-
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <DonutChart title="Revenue" data={revenueData} formatValue={(v) => money(v, 2)} />
         <DonutChart title="Jobs" data={jobsData} formatValue={(v) => v.toLocaleString()} />
@@ -506,44 +536,28 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-at-border bg-at-bg">
-              <th className="px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Department
-              </th>
-              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Revenue
-              </th>
-              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Jobs
-              </th>
-              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Collections
-              </th>
-              <th className="px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Outstanding
-              </th>
+              <th className={th}>Department</th>
+              <th className={`${th} text-right`}>Revenue</th>
+              <th className={`${th} text-right`}>Jobs</th>
+              <th className={`${th} text-right`}>Collections</th>
+              <th className={`${th} text-right`}>Outstanding</th>
             </tr>
           </thead>
           <tbody>
             {stats.map((s) => (
               <tr key={s.label} className="border-b border-at-border last:border-0">
-                <td className="whitespace-nowrap px-4 py-2.5 font-bold text-at-navy">
+                <td className="whitespace-nowrap px-4 py-3 font-bold text-at-navy">
                   <span
-                    className="mr-2 inline-block h-2 w-2 rounded-full"
+                    className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: s.color }}
                   />
                   {s.label}
                 </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
-                  {money(s.revenue, 2)}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
-                  {s.jobs.toLocaleString()}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
-                  {money(s.collections, 2)}
-                </td>
+                <td className={num}>{money(s.revenue, 2)}</td>
+                <td className={num}>{s.jobs.toLocaleString()}</td>
+                <td className={num}>{money(s.collections, 2)}</td>
                 <td
-                  className="whitespace-nowrap px-4 py-2.5 text-right font-semibold"
+                  className="whitespace-nowrap px-4 py-3 text-right text-base font-bold tabular-nums"
                   style={{ color: s.outstanding > 0 ? "#ef4444" : "#10b981" }}
                 >
                   {money(s.outstanding, 2)}
@@ -553,11 +567,112 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-2 text-xs text-at-slate">
-        Includes all approved-and-beyond orders, including completed/delivered ones — figures
-        will differ from the Active Orders totals above, which exclude completed orders.
+// "By Category" view — the two-group legend + 3 stacked bars. The explanatory
+// sentence that used to sit above the legend is gone; the color-grouped legend
+// carries the Garment/Press split visually.
+function CategoryView({
+  stats,
+  uncategorized,
+}: {
+  stats: Map<OrderCategory, CatBucket>;
+  uncategorized: CatBucket;
+}) {
+  const hasUncategorized =
+    uncategorized.jobs.size > 0 || uncategorized.revenue !== 0 || uncategorized.collections !== 0;
+
+  return (
+    <div>
+      <CategoryLegend />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <StackedCategoryBar
+          title="Revenue"
+          metric={(b) => b.revenue}
+          stats={stats}
+          valueFormatter={(v) => money(v, 2)}
+          yTickFormatter={compactNum}
+        />
+        <StackedCategoryBar
+          title="Jobs"
+          metric={(b) => b.jobs.size}
+          stats={stats}
+          valueFormatter={(v) => v.toLocaleString()}
+          yTickFormatter={(v) => `${v}`}
+        />
+        <StackedCategoryBar
+          title="Collections"
+          metric={(b) => b.collections}
+          stats={stats}
+          valueFormatter={(v) => money(v, 2)}
+          yTickFormatter={compactNum}
+        />
       </div>
+
+      {hasUncategorized && (
+        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
+          ⚠ {uncategorized.jobs.size} order(s) have a print type not covered by the category
+          mapping — they are flagged in the browser console (orderCategory) and NOT included in the
+          six categories above, so this section would no longer sum to the department totals until a
+          mapping rule is added. Revenue not shown here: {money(uncategorized.revenue, 2)}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+type DeptView = "Department" | "By Category";
+
+// Merged section: one heading + (i) caveats popover + a pill toggle switching
+// between the department (2-way) and category (6-way) views of the SAME rows.
+export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceRow[] }) {
+  const [view, setView] = useState<DeptView>("Department");
+  const deptStats = useMemo(() => groupDepartmentPerformance(rows), [rows]);
+  const category = useMemo(() => groupCategoryBreakdown(rows), [rows]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div>
+      <div className="mb-3 mt-8 flex items-center gap-2">
+        <span className="text-lg font-bold text-at-navy-soft">Departmental Performance</span>
+        <InfoPopover>
+          <p className="mb-2">
+            Includes all approved-and-beyond orders, including completed/delivered ones — figures
+            will differ from the Active Orders totals above, which exclude completed orders.
+          </p>
+          <p>
+            &ldquo;Commercial Press&rdquo; is a display label for orders stored as
+            &ldquo;Offset&rdquo;.
+          </p>
+        </InfoPopover>
+      </div>
+
+      <div className="mb-4 flex gap-2">
+        {(["Department", "By Category"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => setView(option)}
+            className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
+              view === option
+                ? "border-at-navy bg-at-navy text-at-white"
+                : "border-at-border bg-at-white text-at-slate hover:border-at-accent"
+            }`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+
+      {view === "Department" ? (
+        <DepartmentView stats={deptStats} />
+      ) : (
+        <CategoryView stats={category.stats} uncategorized={category.uncategorized} />
+      )}
     </div>
   );
 }
@@ -637,7 +752,7 @@ function StackedCategoryBar({
   ];
   return (
     <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
-      <div className="mb-2 text-sm font-bold text-at-navy">{title}</div>
+      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-at-slate">{title}</div>
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
@@ -685,62 +800,5 @@ function CategoryLegend() {
   );
 }
 
-// Additive section BELOW Departmental Performance — same 3 metrics, same
-// underlying rows, just split 6 ways instead of 2. Reads the same
-// deptPerformanceRows passed to DepartmentalPerformanceCharts (no requery).
-export function CategoryBreakdownCharts({ rows }: { rows: DeptPerformanceRow[] }) {
-  const { stats, uncategorized } = useMemo(() => groupCategoryBreakdown(rows), [rows]);
-
-  if (rows.length === 0) return null;
-
-  const hasUncategorized =
-    uncategorized.jobs.size > 0 || uncategorized.revenue !== 0 || uncategorized.collections !== 0;
-
-  return (
-    <div>
-      <SectionHeader>Category Breakdown</SectionHeader>
-      <div className="mb-3 text-xs text-at-slate">
-        The same Revenue, Jobs &amp; Collections as Departmental Performance above, split into 6
-        categories. Each stacked bar&apos;s segments sum to that department&apos;s total — Garment =
-        Screen Print + Large Format + Embroidery; Press = Commercial Press + Digital Press +
-        Packaging. &ldquo;Commercial Press&rdquo; is a display label for orders stored as
-        &ldquo;Offset&rdquo;.
-      </div>
-
-      <CategoryLegend />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <StackedCategoryBar
-          title="Revenue"
-          metric={(b) => b.revenue}
-          stats={stats}
-          valueFormatter={(v) => money(v, 2)}
-          yTickFormatter={compactNum}
-        />
-        <StackedCategoryBar
-          title="Jobs"
-          metric={(b) => b.jobs.size}
-          stats={stats}
-          valueFormatter={(v) => v.toLocaleString()}
-          yTickFormatter={(v) => `${v}`}
-        />
-        <StackedCategoryBar
-          title="Collections"
-          metric={(b) => b.collections}
-          stats={stats}
-          valueFormatter={(v) => money(v, 2)}
-          yTickFormatter={compactNum}
-        />
-      </div>
-
-      {hasUncategorized && (
-        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
-          ⚠ {uncategorized.jobs.size} order(s) have a print type not covered by the category
-          mapping — they are flagged in the browser console (orderCategory) and NOT included in the
-          six categories above, so this section would no longer sum to the department totals until a
-          mapping rule is added. Revenue not shown here: {money(uncategorized.revenue, 2)}.
-        </div>
-      )}
-    </div>
-  );
-}
+// (CategoryBreakdownCharts merged into DepartmentalPerformanceCharts above as
+// the "By Category" toggle view — see CategoryView.)
