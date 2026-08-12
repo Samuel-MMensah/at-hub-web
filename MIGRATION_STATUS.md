@@ -1694,6 +1694,15 @@ investigated and **deliberately deferred**, not forgotten:
   files land) — `import app` resolved to the reference file instead of
   the FastAPI app, breaking any fresh backend restart with no visible
   symptom until it happened.
+- **Every DDL change gets a migration file in `supabase/migrations/` at
+  the same time it's applied to Supabase — applied-and-captured
+  together, never applied-then-described.** DDL is still run in the
+  Supabase SQL editor (this tooling has no Supabase DDL access), but the
+  exact statement is committed as a dated, numbered `*.sql` file in that
+  folder in the same change, so the live schema is never the only source
+  of truth. The existing files there are a one-time back-capture of all
+  DDL applied before this rule existed (see `supabase/migrations/README.md`);
+  from now on the folder must not fall behind the database again.
 
 ## Implemented design decision — Die Cutter to Folder Gluer scheduling
 
