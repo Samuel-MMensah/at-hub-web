@@ -80,20 +80,29 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Do-work items. Purely a display regrouping of the former single
+    // "Administrative Portal" — no item's roles/requiresSalesRep/route/
+    // icon/label changed, only its position and which group label it sits
+    // under. Reporting/oversight items moved to the group below.
     label: "Administrative Portal",
     items: [
       { label: "Raise Job Order", href: "/raise-order", icon: FilePlus2, roles: [...ADMIN_ROLES, ...RAISE_ORDER_ROLES] },
+      { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },
       { label: "My Order Tracker", href: "/my-orders", icon: ClipboardList, roles: [...ADMIN_ROLES, ...RAISE_ORDER_ROLES] },
+      { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, ...WAREHOUSE_ROLES] },
+      { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
+    ],
+  },
+  {
+    label: "Reporting & Oversight",
+    items: [
       // Same conceptual pattern as My Order Tracker — a personal,
       // self-filtered view, not a role-gated one. No `roles` here
       // deliberately: visibility is purely requiresSalesRep, matching
       // the confirmed dual-role reality (Bertha/Mohammed/Mante hold
       // Front Desk but are gated here only by is_sales_rep).
       { label: "My Sales Dashboard", href: "/my-sales-dashboard", icon: TrendingUp, requiresSalesRep: true },
-      { label: "Warehouse", href: "/warehouse", icon: Warehouse, roles: [...ADMIN_ROLES, ...WAREHOUSE_ROLES] },
-      { label: "Dispatch", href: "/dispatch", icon: Truck, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Samples", href: "/samples", icon: FlaskConical, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
-      { label: "Authorization Center", href: "/authorization", icon: ShieldCheck, roles: ADMIN_ROLES, badgeKey: "pendingApprovals" },
       { label: "Approved Orders Archive", href: "/archive", icon: Archive, roles: ADMIN_ROLES },
       { label: "Audit Log", href: "/audit-log", icon: History },
     ],
