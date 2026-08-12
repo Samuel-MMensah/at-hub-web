@@ -549,13 +549,13 @@ export interface ResubmitOrderData {
 // (`resubmit_data.get("department", "PRESS")` in the source).
 // ═══════════════════════════════════════════════════════════════════
 export function RaiseOrderClient({
-  userEmail,
+  userFullName,
   resubmitOrder,
   clients,
   salesReps,
   linkableSamples,
 }: {
-  userEmail: string;
+  userFullName: string;
   resubmitOrder: ResubmitOrderData | null;
   clients: ClientOption[];
   salesReps: SalesRepOption[];
@@ -579,9 +579,9 @@ export function RaiseOrderClient({
           </div>
         </div>
         {dept === "GARMENT" ? (
-          <GarmentResubmitForm order={resubmitOrder} userEmail={userEmail} />
+          <GarmentResubmitForm order={resubmitOrder} userFullName={userFullName} />
         ) : (
-          <PressResubmitForm order={resubmitOrder} userEmail={userEmail} />
+          <PressResubmitForm order={resubmitOrder} userFullName={userFullName} />
         )}
       </div>
     );
@@ -608,9 +608,9 @@ export function RaiseOrderClient({
       <div className="mb-4 text-lg font-bold text-at-navy-soft">{department} Job Order Entry</div>
 
       {department === "PRESS" ? (
-        <PressCart userEmail={userEmail} clients={clients} salesReps={salesReps} linkableSamples={linkableSamples} />
+        <PressCart userFullName={userFullName} clients={clients} salesReps={salesReps} linkableSamples={linkableSamples} />
       ) : (
-        <GarmentCart userEmail={userEmail} clients={clients} salesReps={salesReps} linkableSamples={linkableSamples} />
+        <GarmentCart userFullName={userFullName} clients={clients} salesReps={salesReps} linkableSamples={linkableSamples} />
       )}
     </div>
   );
@@ -757,12 +757,12 @@ function itemFormFromCartItem(item: PressCartItem): ItemFormState {
 }
 
 function PressCart({
-  userEmail,
+  userFullName,
   clients,
   salesReps,
   linkableSamples,
 }: {
-  userEmail: string;
+  userFullName: string;
   clients: ClientOption[];
   salesReps: SalesRepOption[];
   linkableSamples: SampleOption[];
@@ -1248,7 +1248,7 @@ function PressCart({
         </div>
 
         <div className="mt-4 rounded-at border border-at-border bg-at-bg px-4 py-2.5 text-xs text-at-slate">
-          Handled By: {userEmail} | Date: {today}
+          Handled By: {userFullName} | Date: {today}
         </div>
 
         {missingFields.length > 0 && (
@@ -1592,12 +1592,12 @@ function buildMaterialDescriptionRows(matDesc: string, finSize: string): Materia
 }
 
 function GarmentCart({
-  userEmail,
+  userFullName,
   clients,
   salesReps,
   linkableSamples,
 }: {
-  userEmail: string;
+  userFullName: string;
   clients: ClientOption[];
   salesReps: SalesRepOption[];
   linkableSamples: SampleOption[];
@@ -2091,7 +2091,7 @@ function GarmentCart({
         </FormField>
 
         <div className="mt-4 rounded-at border border-at-border bg-at-bg px-4 py-2.5 text-xs text-at-slate">
-          Handled By: {userEmail} | Date: {today}
+          Handled By: {userFullName} | Date: {today}
         </div>
 
         {missingFields.length > 0 && (
@@ -2402,7 +2402,7 @@ function ResubmitConfirmation({ ticket }: { ticket: Record<string, unknown> }) {
   );
 }
 
-function PressResubmitForm({ order, userEmail }: { order: ResubmitOrderData; userEmail: string }) {
+function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; userFullName: string }) {
   const [today] = useState(() => todayLocalDateStr());
 
   const [clientName, setClientName] = useState(() => rd(order, "customer_name"));
@@ -2767,7 +2767,7 @@ function PressResubmitForm({ order, userEmail }: { order: ResubmitOrderData; use
         </div>
 
         <div className="mt-4 rounded-at border border-at-border bg-at-bg px-4 py-2.5 text-xs text-at-slate">
-          Handled By: {userEmail} | Date: {today}
+          Handled By: {userFullName} | Date: {today}
         </div>
 
         {missingFields.length > 0 && (
@@ -2794,7 +2794,7 @@ function PressResubmitForm({ order, userEmail }: { order: ResubmitOrderData; use
   );
 }
 
-function GarmentResubmitForm({ order, userEmail }: { order: ResubmitOrderData; userEmail: string }) {
+function GarmentResubmitForm({ order, userFullName }: { order: ResubmitOrderData; userFullName: string }) {
   const [today] = useState(() => todayLocalDateStr());
 
   const [clientName, setClientName] = useState(() => rd(order, "customer_name"));
@@ -3198,7 +3198,7 @@ function GarmentResubmitForm({ order, userEmail }: { order: ResubmitOrderData; u
         </FormField>
 
         <div className="mt-4 rounded-at border border-at-border bg-at-bg px-4 py-2.5 text-xs text-at-slate">
-          Handled By: {userEmail} | Date: {today}
+          Handled By: {userFullName} | Date: {today}
         </div>
 
         {missingFields.length > 0 && (

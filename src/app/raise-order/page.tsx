@@ -93,7 +93,7 @@ export default async function RaiseOrderPage({
           )}
 
           <RaiseOrderClient
-            userEmail={user.email}
+            userFullName={user.fullName}
             resubmitOrder={resubmitOrder}
             clients={clients}
             salesReps={salesReps}
