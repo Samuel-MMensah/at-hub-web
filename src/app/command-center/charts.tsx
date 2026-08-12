@@ -20,6 +20,13 @@ import {
 } from "recharts";
 import { weekStart } from "@/lib/week-groups";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import {
+  orderCategory,
+  ORDER_CATEGORIES,
+  GARMENT_CATEGORIES,
+  PRESS_CATEGORIES,
+  type OrderCategory,
+} from "@/lib/order-category";
 import { DonutChart } from "@/components/ui/donut-chart";
 
 const CURRENCY = "GH₵";
@@ -551,6 +558,189 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
         Includes all approved-and-beyond orders, including completed/delivered ones — figures
         will differ from the Active Orders totals above, which exclude completed orders.
       </div>
+    </div>
+  );
+}
+
+/* ── Category Breakdown (6-way) ────────────────────────────────────── */
+
+// Garment categories in the amber family, Press in the blue family — the same
+// two hues Departmental Performance uses (Garment #d97706 / Press #0369a1),
+// shaded so the six are distinguishable while the group is still readable.
+const CATEGORY_COLORS: Record<OrderCategory, string> = {
+  "Screen Print": "#b45309",
+  "Large Format": "#d97706",
+  Embroidery: "#f59e0b",
+  "Commercial Press": "#075985",
+  "Digital Press": "#0369a1",
+  Packaging: "#0ea5e9",
+};
+
+interface CatBucket {
+  revenue: number;
+  collections: number;
+  jobs: Set<string>;
+}
+
+// Reuses the SHARED orderCategory() mapping (src/lib/order-category.ts) — the
+// classification is never re-derived here. Jobs is a distinct job_order_no
+// count, matching Departmental Performance exactly, so the six category
+// subtotals sum to the two department totals.
+function groupCategoryBreakdown(rows: DeptPerformanceRow[]) {
+  const stats = new Map<OrderCategory, CatBucket>();
+  for (const c of ORDER_CATEGORIES) stats.set(c, { revenue: 0, collections: 0, jobs: new Set() });
+  const uncategorized: CatBucket = { revenue: 0, collections: 0, jobs: new Set() };
+
+  for (const r of rows) {
+    const c = orderCategory(r);
+    const bucket = c ? (stats.get(c) as CatBucket) : uncategorized;
+    bucket.revenue += Number(r.total_amount ?? 0);
+    bucket.collections += Number(r.deposit_amount ?? 0);
+    if (r.job_order_no) bucket.jobs.add(r.job_order_no);
+  }
+  return { stats, uncategorized };
+}
+
+function compactNum(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (a >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return `${n}`;
+}
+
+const EMPTY_BUCKET: CatBucket = { revenue: 0, collections: 0, jobs: new Set() };
+
+// One stacked bar chart per metric: X = [Garment, Press], each bar stacked from
+// its own 3 sub-categories — so each bar's height IS that department's total.
+function StackedCategoryBar({
+  title,
+  metric,
+  stats,
+  valueFormatter,
+  yTickFormatter,
+}: {
+  title: string;
+  metric: (b: CatBucket) => number;
+  stats: Map<OrderCategory, CatBucket>;
+  valueFormatter: (v: number) => string;
+  yTickFormatter: (v: number) => string;
+}) {
+  const data = [
+    {
+      group: "Garment",
+      ...Object.fromEntries(GARMENT_CATEGORIES.map((c) => [c, metric(stats.get(c) ?? EMPTY_BUCKET)])),
+    },
+    {
+      group: "Press",
+      ...Object.fromEntries(PRESS_CATEGORIES.map((c) => [c, metric(stats.get(c) ?? EMPTY_BUCKET)])),
+    },
+  ];
+  return (
+    <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
+      <div className="mb-2 text-sm font-bold text-at-navy">{title}</div>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
+          <XAxis dataKey="group" tick={{ fontSize: 12, fontWeight: 600 }} />
+          <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={yTickFormatter} />
+          <Tooltip content={<ChartTooltip valueFormatter={valueFormatter} />} cursor={{ fill: "#f8fafc" }} />
+          {/* Legend is rendered once for the whole section (CategoryLegend),
+              grouped by Garment/Press — not per-chart. */}
+          {ORDER_CATEGORIES.map((c) => (
+            <Bar key={c} dataKey={c} stackId="a" name={c} fill={CATEGORY_COLORS[c]} maxBarSize={96} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// One shared legend for the section, split into the two labeled groups
+// (Garment / Press) that mirror the amber/blue bar grouping — not a flat
+// 6-item list, and not repeated per chart.
+function CategoryLegend() {
+  const groups: { label: string; cats: readonly OrderCategory[] }[] = [
+    { label: "Garment", cats: GARMENT_CATEGORIES },
+    { label: "Press", cats: PRESS_CATEGORIES },
+  ];
+  return (
+    <div className="mb-3 flex flex-wrap gap-x-8 gap-y-2">
+      {groups.map((g) => (
+        <div key={g.label} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+            {g.label}
+          </span>
+          {g.cats.map((c) => (
+            <span key={c} className="flex items-center gap-1.5 text-xs text-at-navy">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{ backgroundColor: CATEGORY_COLORS[c] }}
+              />
+              {c}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Additive section BELOW Departmental Performance — same 3 metrics, same
+// underlying rows, just split 6 ways instead of 2. Reads the same
+// deptPerformanceRows passed to DepartmentalPerformanceCharts (no requery).
+export function CategoryBreakdownCharts({ rows }: { rows: DeptPerformanceRow[] }) {
+  const { stats, uncategorized } = useMemo(() => groupCategoryBreakdown(rows), [rows]);
+
+  if (rows.length === 0) return null;
+
+  const hasUncategorized =
+    uncategorized.jobs.size > 0 || uncategorized.revenue !== 0 || uncategorized.collections !== 0;
+
+  return (
+    <div>
+      <SectionHeader>Category Breakdown</SectionHeader>
+      <div className="mb-3 text-xs text-at-slate">
+        The same Revenue, Jobs &amp; Collections as Departmental Performance above, split into 6
+        categories. Each stacked bar&apos;s segments sum to that department&apos;s total — Garment =
+        Screen Print + Large Format + Embroidery; Press = Commercial Press + Digital Press +
+        Packaging. &ldquo;Commercial Press&rdquo; is a display label for orders stored as
+        &ldquo;Offset&rdquo;.
+      </div>
+
+      <CategoryLegend />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <StackedCategoryBar
+          title="Revenue"
+          metric={(b) => b.revenue}
+          stats={stats}
+          valueFormatter={(v) => money(v, 2)}
+          yTickFormatter={compactNum}
+        />
+        <StackedCategoryBar
+          title="Jobs"
+          metric={(b) => b.jobs.size}
+          stats={stats}
+          valueFormatter={(v) => v.toLocaleString()}
+          yTickFormatter={(v) => `${v}`}
+        />
+        <StackedCategoryBar
+          title="Collections"
+          metric={(b) => b.collections}
+          stats={stats}
+          valueFormatter={(v) => money(v, 2)}
+          yTickFormatter={compactNum}
+        />
+      </div>
+
+      {hasUncategorized && (
+        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
+          ⚠ {uncategorized.jobs.size} order(s) have a print type not covered by the category
+          mapping — they are flagged in the browser console (orderCategory) and NOT included in the
+          six categories above, so this section would no longer sum to the department totals until a
+          mapping rule is added. Revenue not shown here: {money(uncategorized.revenue, 2)}.
+        </div>
+      )}
     </div>
   );
 }

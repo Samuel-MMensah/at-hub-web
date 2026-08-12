@@ -9,6 +9,7 @@ import {
   CapacityCharts,
   OrderIntakeChart,
   DepartmentalPerformanceCharts,
+  CategoryBreakdownCharts,
   type TrendOrderRow,
   type CapacityJobRow,
   type DeptPerformanceRow,
@@ -257,6 +258,7 @@ export default async function CommandCenterPage() {
       <CapacityCharts jobs={jobs} />
       <OrderIntakeChart orders={orders} />
       <DepartmentalPerformanceCharts rows={deptPerformanceRows} />
+      <CategoryBreakdownCharts rows={deptPerformanceRows} />
     </AppShell>
   );
 }

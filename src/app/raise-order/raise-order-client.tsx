@@ -1394,7 +1394,11 @@ function PressCart({
 
 // Same list as Archive's category dropdown / Authorization Center's
 // garment print type (app.py:3927).
-const GARMENT_PRINT_TYPE_OPTIONS = ["", "DTF", "Flexi Screen Print", "UV-DTF", "SAV", "Embroidery"];
+// "Flexi Screen Print" was split into two distinct options ("Flexi" and
+// "Screen Print") — NEW orders only. Existing rows keep their stored
+// "Flexi Screen Print" value untouched; orderCategory() (src/lib/order-category.ts)
+// maps the legacy value and both new values correctly.
+const GARMENT_PRINT_TYPE_OPTIONS = ["", "DTF", "Flexi", "Screen Print", "UV-DTF", "SAV", "Embroidery"];
 // Reversed order vs the Press cart's MATERIAL_SOURCE_OPTIONS (Customer
 // first there, Company first here) — a real inconsistency between the
 // two forms in the source itself (app.py:3556 vs app.py:3920), kept
