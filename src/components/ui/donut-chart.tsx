@@ -51,9 +51,24 @@ interface SliceLabelProps {
   percent?: number;
 }
 
+// Below this share, a slice's external label stops being rendered at
+// all — a percentage FLOOR, not a slice-count cap, so this scales
+// correctly whichever chart it's applied to and however many categories
+// it has today or grows to. Confirmed live against Business Unit
+// Breakdown's real 7-category distribution (GOVERNMENT 71%, PRIVATE
+// 25%, then a cluster of SUBSIDIARY/WALK-IN/SAMPLE/REPLACEMENT/CSR all
+// at or under 2.6%) — those five share a few degrees of arc, so their
+// labels stack on top of each other. The slice itself, its legend entry
+// (color + name), and its exact value on hover are all unaffected —
+// only the floating external number disappears, and a near-zero slice's
+// label ("GH₵0.00 (0%)") wasn't informative next to its neighbors'
+// anyway.
+const MIN_LABEL_PERCENT = 0.03;
+
 function renderSliceLabel(formatValue: (v: number) => string) {
   function SliceLabel({ cx = 0, cy = 0, midAngle = 0, outerRadius = 0, value, percent }: SliceLabelProps) {
     if (value == null || percent == null) return null;
+    if (percent < MIN_LABEL_PERCENT) return null;
     const text = `${formatValue(value)} (${(percent * 100).toFixed(0)}%)`;
 
     // Label sits just outside the (now smaller) pie, not centered on
