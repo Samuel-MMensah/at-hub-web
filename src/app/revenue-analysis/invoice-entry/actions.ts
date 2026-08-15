@@ -27,7 +27,12 @@ const REVENUE_CATEGORIES = [
   "Packaging",
 ] as const;
 
-const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY"] as const;
+// Matches the live job_invoices.business_unit CHECK constraint exactly
+// (supabase/migrations/20260815090000_...) — SAMPLE/CSR/REPLACEMENT added
+// 2026-08-15 alongside that migration; this was the real blocker (a stale
+// copy of the old 4-value list here rejected the write server-side even
+// once the DB and the UI dropdown allowed the new values).
+const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY", "SAMPLE", "CSR", "REPLACEMENT"] as const;
 
 export interface RecordInvoiceInput {
   date: string;

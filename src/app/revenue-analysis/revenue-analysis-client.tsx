@@ -71,19 +71,44 @@ const REVENUE_CATEGORY_COLORS: Record<string, string> = {
 };
 
 // Business Unit is a different categorical dimension shown in its own
-// donut with its own legend — reusing the same palette's first 4 slots
-// here (not a fresh, unvalidated pick) is standard practice already
-// established on this exact page family (Command Center reuses
-// CATEGORICAL_PALETTE across its own separate chart sections the same
-// way), not a source of confusion with the Revenue Trend chart above
-// since each chart carries its own legend naming what its colors mean.
-const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY"] as const;
+// donut with its own legend — reusing the same palette's slots here (not
+// a fresh, unvalidated pick) is standard practice already established on
+// this exact page family (Command Center reuses CATEGORICAL_PALETTE
+// across its own separate chart sections the same way), not a source of
+// confusion with the Revenue Trend chart above since each chart carries
+// its own legend naming what its colors mean.
+//
+// SAMPLE/CSR/REPLACEMENT added 2026-08-15 alongside the CHECK constraint
+// migration that introduced them (supabase/migrations/20260815090000_...),
+// reusing REVENUE_CATEGORY_COLORS' own 7-slot palette in the same fixed
+// order (not a fresh pick) — independently re-validated as a 7-slot set
+// against this app's card surface, not assumed valid just because it's
+// the same hex list already used above for revenue_category:
+// `node scripts/validate_palette.js
+// "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#4a3aa7" --mode light
+// --surface "#ffffff"` — all hard gates PASS (worst adjacent CVD ΔE 9.1,
+// worst normal-vision ΔE 19.6). The contrast WARN (3 slots below 3:1) is
+// the same one that already covered GOVERNMENT/SUBSIDIARY before this
+// change — satisfied by DonutChart's own built-in slice labels + legend
+// (visible-label relief), not a new gap introduced here.
+const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY", "SAMPLE", "CSR", "REPLACEMENT"] as const;
 const BUSINESS_UNIT_COLORS: Record<string, string> = {
   "WALK-IN": "#2a78d6",
   PRIVATE: "#eb6834",
   GOVERNMENT: "#1baf7a",
   SUBSIDIARY: "#eda100",
+  SAMPLE: "#e87ba4",
+  CSR: "#008300",
+  REPLACEMENT: "#4a3aa7",
 };
+// Fallback for a business_unit value the live CHECK constraint accepts but
+// this list hasn't been updated for yet — exactly the bug class just
+// fixed (the old fixed 4-item list silently dropped SAMPLE/CSR/REPLACEMENT
+// sums from this donut; invisible only because all three were $0 in the
+// June data). A deliberate neutral "Other" bucket per the dataviz skill's
+// own rule ("a 9th series is never a generated hue — it folds into
+// Other"), not a validated categorical hue.
+const UNKNOWN_BUSINESS_UNIT_COLOR = "#6b7280";
 
 // Same green/red convention already established everywhere else in
 // this app (Dispatch/Archive/Stock Balance's negative-value red, etc.)
@@ -145,15 +170,30 @@ function ChartTooltip({
 // Business Unit Breakdown — SUM(invoice_total) per business_unit
 // across the FULL dataset, not period-filtered (unlike the Revenue
 // Trend chart/table below, which respect the Weekly/Monthly toggle).
-// Fixed slice order (never re-sorted by value), matching the same
-// "fixed hue anchors" rule the categorical palette itself follows.
+// Fixed slice order for known categories (never re-sorted by value),
+// matching the same "fixed hue anchors" rule the categorical palette
+// itself follows — BUT the final slice list is derived from the data's
+// own distinct business_unit values, not hardcoded to BUSINESS_UNITS
+// alone. That distinction is the actual fix: the old version summed
+// every row correctly into the Map but then only ever returned
+// BUSINESS_UNITS.map(...), silently dropping any value not in that fixed
+// list from the rendered chart (this is exactly how SAMPLE/CSR/REPLACEMENT
+// went missing here before — invisible only because all three were $0 in
+// the June data). Known categories still get their fixed, validated
+// color in fixed order; anything genuinely new falls back to a neutral
+// "Other" color instead of vanishing, so the NEXT forgotten category is
+// visible-but-uncolored rather than silently dropped like this one was.
 function buildBusinessUnitData(invoices: InvoiceRow[]) {
   const sums = new Map<string, number>();
   for (const bu of BUSINESS_UNITS) sums.set(bu, 0);
   for (const inv of invoices) {
     sums.set(inv.business_unit, (sums.get(inv.business_unit) ?? 0) + inv.invoice_total);
   }
-  return BUSINESS_UNITS.map((bu) => ({ name: bu, value: sums.get(bu) ?? 0, color: BUSINESS_UNIT_COLORS[bu] }));
+  const known = BUSINESS_UNITS.map((bu) => ({ name: bu, value: sums.get(bu) ?? 0, color: BUSINESS_UNIT_COLORS[bu] }));
+  const unrecognized = Array.from(sums.keys())
+    .filter((name) => !(BUSINESS_UNITS as readonly string[]).includes(name))
+    .map((name) => ({ name, value: sums.get(name) ?? 0, color: UNKNOWN_BUSINESS_UNIT_COLOR }));
+  return [...known, ...unrecognized];
 }
 
 // Collections vs Outstanding — company-wide SUM(payment) vs

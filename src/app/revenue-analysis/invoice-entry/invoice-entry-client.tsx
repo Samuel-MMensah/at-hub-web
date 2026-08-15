@@ -20,8 +20,12 @@ const REVENUE_CATEGORIES = [
 ] as const;
 
 // Uppercase, matching the real stored values / CHECK constraint —
-// not the title-case used earlier in conversation.
-const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY"] as const;
+// not the title-case used earlier in conversation. SAMPLE/CSR/REPLACEMENT
+// added 2026-08-15 alongside the CHECK constraint migration that
+// introduced them (supabase/migrations/20260815090000_...) — must match
+// actions.ts's own copy of this list exactly, or the dropdown offers a
+// value the server-side validation there will reject.
+const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY", "SAMPLE", "CSR", "REPLACEMENT"] as const;
 
 export interface JobOrderOption {
   job_order_no: string;
