@@ -165,7 +165,11 @@ export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionRe
 // `balance = total - deposit`, unclamped) means a silent server-side
 // clamp here would be the one place balance math got force-corrected
 // instead of surfaced, inconsistent with that convention.
-export async function recordInvoicePayment(invoiceId: number, paymentAmount: number): Promise<ActionResult> {
+export async function recordInvoicePayment(
+  invoiceId: number,
+  paymentAmount: number,
+  receiptNo: string
+): Promise<ActionResult> {
   await requireInvoiceEntryAccess();
 
   if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
@@ -196,7 +200,9 @@ export async function recordInvoicePayment(invoiceId: number, paymentAmount: num
 
   const { error } = await supabase
     .from("job_invoices")
-    .update({ payment: newPayment, balance: newBalance })
+    // Same "empty string -> null" convention as Dispatch's own
+    // recordPayment (src/app/dispatch/actions.ts) for this exact field.
+    .update({ payment: newPayment, balance: newBalance, receipt_no: receiptNo || null })
     .eq("id", invoiceId);
 
   if (error) {

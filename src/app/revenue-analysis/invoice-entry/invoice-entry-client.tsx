@@ -74,6 +74,15 @@ function parseDateOnly(raw: string): Date {
   return new Date(raw);
 }
 
+// Historical rows carry real float residue (e.g. 0.00039999999998995918
+// for a balance that's actually zero) — every balance this section
+// displays, pre-fills, or reasons about goes through this first, so a
+// residue row reads and behaves as the GH₵0.00 it really is, not as a
+// tiny nonzero amount someone could accidentally "pay".
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -659,7 +668,7 @@ function RecordPaymentSection({ invoices }: { invoices: InvoiceRow[] }) {
         {candidates.map((inv) => (
           <option key={inv.id} value={inv.id}>
             {inv.date} — {inv.customer_name || "—"}
-            {inv.job_order_no ? ` (${inv.job_order_no})` : ""} · Balance {money(inv.balance)}
+            {inv.job_order_no ? ` (${inv.job_order_no})` : ""} · Balance {money(round2(inv.balance))}
           </option>
         ))}
       </select>
@@ -672,27 +681,38 @@ function RecordPaymentSection({ invoices }: { invoices: InvoiceRow[] }) {
 }
 
 // Payment Amount input matches Dispatch's DispatchOrderCard field
-// exactly: min={0.01}, max={balance}, step={50}, initial value =
-// balance (full outstanding amount pre-filled), same disabled
-// condition. `useState(balance)` only re-initializes on remount
-// (forced by the parent's key={target.id} when a DIFFERENT invoice is
-// selected) — recording a second payment on the SAME invoice without
-// reselecting it has the same pre-fill staleness Dispatch's own cards
-// already have; not a new rough edge introduced here, matching the
-// cited precedent exactly rather than silently improving on it.
+// exactly: min={0.01}, max={balance}, step={50}, initial value = balance
+// (full outstanding amount pre-filled) — now the round2()'d balance, not
+// the raw float, so a historical residue row (e.g.
+// 0.00039999999998995918) pre-fills 0.00 and the whole payment control
+// disables instead of offering to "record" a fractional-cent phantom
+// payment. Receipt number added to match Dispatch's exact field (same
+// label/placeholder), for audit-trail consistency across every place a
+// payment gets recorded in this app. `useState(balance)` only
+// re-initializes on remount (forced by the parent's key={target.id}
+// when a DIFFERENT invoice is selected) — recording a second payment on
+// the SAME invoice without reselecting it has the same pre-fill
+// staleness Dispatch's own cards already have; not a new rough edge
+// introduced here, matching the cited precedent exactly rather than
+// silently improving on it.
 function InvoicePaymentPanel({ invoice }: { invoice: InvoiceRow }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [payAmt, setPayAmt] = useState(invoice.balance);
 
-  const balance = invoice.balance;
+  // Rounded FIRST, then everything else (pre-fill, max, the "is there
+  // anything to pay" gate) derives from this — a historical float-residue
+  // row (e.g. balance = 0.00039999999998995918) now reads and behaves as
+  // the real GH₵0.00 it is, not as a tiny payable amount.
+  const balance = round2(invoice.balance);
+  const [payAmt, setPayAmt] = useState(balance);
+  const [receiptNo, setReceiptNo] = useState("");
 
   function handleRecordPayment() {
     setError(null);
     setSuccess(null);
     startTransition(async () => {
-      const result = await recordInvoicePayment(invoice.id, payAmt);
+      const result = await recordInvoicePayment(invoice.id, payAmt, receiptNo);
       if (result.error) {
         setError(result.error);
       } else {
@@ -715,28 +735,42 @@ function InvoicePaymentPanel({ invoice }: { invoice: InvoiceRow }) {
       </div>
 
       {balance > 0 ? (
-        <>
-          <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <div>
-              <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Payment Amount
-              </label>
-              <input
-                type="number"
-                min={0.01}
-                max={balance}
-                step={50}
-                value={payAmt}
-                onChange={(e) => setPayAmt(Number(e.target.value))}
-                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-              />
-            </div>
-            <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
-              Record Payment
-            </Button>
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              Payment Amount
+            </label>
+            <input
+              type="number"
+              min={0.01}
+              max={balance}
+              step={50}
+              value={payAmt}
+              onChange={(e) => setPayAmt(Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
           </div>
-        </>
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              Receipt number
+            </label>
+            <input
+              type="text"
+              value={receiptNo}
+              onChange={(e) => setReceiptNo(e.target.value)}
+              placeholder="e.g. RCT-00123 — optional, recommended for the audit trail"
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </div>
+          <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
+            Record Payment
+          </Button>
+        </div>
       ) : (
+        // Same principle as Dispatch's Finalize auto-unlocking at
+        // balance=0, opposite direction: a rounded-to-zero balance
+        // disables the payment action entirely instead of enabling one —
+        // nothing meaningful left to pay, so there's no action to offer.
         <div className="inline-block rounded-md border border-green-200 bg-green-50 px-3.5 py-2 text-sm font-semibold text-green-800">
           Fully paid.
         </div>
