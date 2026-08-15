@@ -12,14 +12,16 @@ import {
   type InvoiceRow,
   type ClientOption,
 } from "@/app/revenue-analysis/invoice-entry/invoice-entry-client";
+import { CategoryReportClient } from "@/app/revenue-analysis/category-report/category-report-client";
 import type { SalesRepOption } from "@/lib/sales-reps";
 
-type TabKey = "dispatch" | "revenue-analysis" | "invoice-entry";
+type TabKey = "dispatch" | "revenue-analysis" | "invoice-entry" | "category-report";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "dispatch", label: "Dispatch" },
   { key: "revenue-analysis", label: "Revenue Analysis" },
   { key: "invoice-entry", label: "Invoice Entry" },
+  { key: "category-report", label: "Category Report" },
 ];
 
 interface DispatchTabsProps {
@@ -84,6 +86,10 @@ export function DispatchTabs({ orders, revenueInvoices, jobOrders, invoices, cli
       {activeTab === "invoice-entry" && (
         <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} salesReps={salesReps} />
       )}
+      {/* Reuses the SAME `invoices` array already fetched for Invoice
+          Entry's own history table (getInvoiceHistory() already selects
+          every column this report needs) — no new query for this tab. */}
+      {activeTab === "category-report" && <CategoryReportClient invoices={invoices} />}
     </div>
   );
 }

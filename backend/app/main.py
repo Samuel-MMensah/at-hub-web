@@ -38,7 +38,12 @@ from app.email import (
     handle_ready_for_finance,
     handle_sent_to_warehouse,
 )
-from app.pdf import _is_garment, dispatch_pdf_manifest, sanitize_customer_name_for_filename
+from app.pdf import (
+    _is_garment,
+    dispatch_pdf_manifest,
+    generate_category_report_pdf,
+    sanitize_customer_name_for_filename,
+)
 from app.supabase_client import get_supabase
 
 app = FastAPI(title="Appointed Time — Support Service")
@@ -87,6 +92,49 @@ def generate_manifest(payload: ManifestRequest, user=Depends(require_user)):
     order_no = ticket.get("job_order_no") or "PENDING"
     customer = sanitize_customer_name_for_filename(ticket.get("customer_name"))
     filename = f"{'Garment' if _is_garment(ticket) else ''}Manifest_{customer}_{order_no}.pdf"
+
+    return Response(
+        content=pdf_buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class CategoryReportRequest(BaseModel):
+    # None/omitted = "All Categories" (no revenue_category filter) —
+    # matches the frontend's own dropdown, which sends the same shape.
+    category: str | None = None
+    from_date: str  # YYYY-MM-DD
+    to_date: str  # YYYY-MM-DD
+
+
+@app.post("/pdf/category-report")
+def category_report_pdf(payload: CategoryReportRequest, user=Depends(require_user)):
+    # Re-queries job_invoices itself via the service-role client, rather
+    # than trusting a client-supplied row list — same "DB truth, not
+    # caller-supplied data" posture as /pdf/manifest above (a client
+    # could otherwise hand this endpoint fabricated rows/totals to
+    # produce a fraudulent-looking official report).
+    supabase = get_supabase()
+    query = (
+        supabase.table("job_invoices")
+        .select(
+            "date, job_order_no, customer_name, revenue_category, product_description, "
+            "business_unit, quantity, amount, invoice_total"
+        )
+        .gte("date", payload.from_date)
+        .lte("date", payload.to_date)
+        .order("date")
+    )
+    if payload.category:
+        query = query.eq("revenue_category", payload.category)
+    rows = query.execute().data or []
+
+    category_label = payload.category or "All Categories"
+    pdf_buffer = generate_category_report_pdf(rows, category_label, payload.from_date, payload.to_date)
+
+    safe_category = sanitize_customer_name_for_filename(category_label, max_length=30)
+    filename = f"CategoryReport_{safe_category}_{payload.from_date}_to_{payload.to_date}.pdf"
 
     return Response(
         content=pdf_buffer.getvalue(),

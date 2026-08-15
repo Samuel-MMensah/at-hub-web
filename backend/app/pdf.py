@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -778,3 +778,137 @@ def dispatch_pdf_manifest(row_dict: dict) -> io.BytesIO:
     if _is_garment(row_dict):
         return generate_garment_pdf_manifest(row_dict)
     return generate_pdf_manifest(row_dict)
+
+
+def generate_category_report_pdf(
+    rows: list[dict], category_label: str, from_date: str, to_date: str
+) -> io.BytesIO:
+    """Revenue Analysis's Category Report export. Genuinely new report
+    shape (a filtered tabular export, not a single order), but reuses
+    the same letterhead style as generate_pdf_manifest's header (company
+    block left, right-aligned title) rather than inventing a fresh look.
+    `rows` is whatever the caller already queried DB-side (job_invoices
+    filtered by revenue_category + date range) -- this function only
+    lays it out, matching every other endpoint's "never trust
+    caller-supplied data for the numbers, only for filter selection"
+    posture (see /pdf/manifest's docstring): the route below re-queries
+    job_invoices itself rather than accepting a client-supplied row
+    list.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4, rightMargin=28, leftMargin=28, topMargin=36, bottomMargin=36
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+    normal_style = ParagraphStyle("NormStyle", parent=styles["Normal"], fontName="Helvetica", fontSize=9)
+    small_grey = ParagraphStyle(
+        "SmallGrey", parent=styles["Normal"], fontName="Helvetica", fontSize=7,
+        textColor=colors.HexColor("#64748b"),
+    )
+    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9)
+    header_cell_style = ParagraphStyle(
+        "HeaderCell", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7.5,
+        textColor=colors.white, leading=9,
+    )
+    total_style = ParagraphStyle("TotalCell", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8)
+
+    header_data = [[
+        Paragraph(
+            "<b>APPOINTED TIME PRINTING LTD.</b><br/>PO BOX AC 56 Art Centre Accra<br/>Tel: 0302 661704/6",
+            normal_style,
+        ),
+        Paragraph(
+            "<font size=10 color='#64748b'>REVENUE ANALYSIS</font><br/>"
+            "<font size=14><b>CATEGORY REPORT</b></font>",
+            ParagraphStyle(name="R", parent=styles["Normal"], alignment=2),
+        ),
+    ]]
+    t_header = Table(header_data, colWidths=[3.7 * inch, 3.7 * inch])
+    t_header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, -1), 1, colors.HexColor("#0f172a")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(t_header)
+    elements.append(Spacer(1, 10))
+
+    elements.append(Paragraph(
+        f"<b>Category:</b> {category_label} &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"<b>Date Range:</b> {from_date} to {to_date} &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"<b>Rows:</b> {len(rows)}",
+        ParagraphStyle(
+            "Filters", parent=styles["Normal"], fontName="Helvetica", fontSize=9.5,
+            textColor=colors.HexColor("#0f172a"), backColor=colors.HexColor("#F8FAFC"),
+            borderColor=colors.HexColor("#E2E8F0"), borderWidth=1, borderPadding=6,
+        ),
+    ))
+    elements.append(Spacer(1, 10))
+
+    if not rows:
+        elements.append(Paragraph(
+            "No invoices match this category / date range.",
+            ParagraphStyle("Empty", parent=styles["Normal"], fontName="Helvetica-Oblique", fontSize=10,
+                           textColor=colors.HexColor("#64748b")),
+        ))
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    # Same 9 columns, same order, as the Category Report results table on
+    # screen and in the CSV export -- one source of truth for "what a
+    # category report contains", just three renderings of it.
+    columns = [
+        "Date", "Order No.", "Customer", "Category", "Product",
+        "Business Unit", "Qty", "Amount (excl. tax)", "Amount (incl. tax)",
+    ]
+    col_widths = [w * inch for w in (0.62, 0.68, 1.15, 0.85, 1.05, 0.72, 0.4, 0.85, 0.85)]
+
+    table_data = [[Paragraph(c, header_cell_style) for c in columns]]
+    total_amount = 0.0
+    total_invoice_total = 0.0
+    for row in rows:
+        amount = float(row.get("amount") or 0)
+        invoice_total = float(row.get("invoice_total") or 0)
+        total_amount += amount
+        total_invoice_total += invoice_total
+        quantity = row.get("quantity")
+        table_data.append([
+            Paragraph(str(row.get("date", "") or ""), cell_style),
+            # Blank for an unlinked invoice -- never the literal "None".
+            Paragraph(str(row.get("job_order_no") or ""), cell_style),
+            Paragraph(str(row.get("customer_name") or ""), cell_style),
+            Paragraph(str(row.get("revenue_category") or ""), cell_style),
+            Paragraph(str(row.get("product_description") or ""), cell_style),
+            Paragraph(str(row.get("business_unit") or ""), cell_style),
+            Paragraph(str(quantity) if quantity is not None else "", cell_style),
+            Paragraph(f"{amount:,.2f}", cell_style),
+            Paragraph(f"{invoice_total:,.2f}", cell_style),
+        ])
+
+    table_data.append([
+        Paragraph("TOTAL", total_style), "", "", "", "", "", "",
+        Paragraph(f"{total_amount:,.2f}", total_style),
+        Paragraph(f"{total_invoice_total:,.2f}", total_style),
+    ])
+
+    t_body = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t_body.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+        ("GRID", (0, 0), (-1, -2), 0.4, colors.HexColor("#E2E8F0")),
+        ("LINEABOVE", (0, -1), (-1, -1), 1, colors.HexColor("#0f172a")),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F8FAFC")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("ALIGN", (6, 1), (8, -1), "RIGHT"),  # Qty + both amount columns, incl. the total row
+    ]))
+    elements.append(t_body)
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph(
+        f"Generated {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}", small_grey
+    ))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
