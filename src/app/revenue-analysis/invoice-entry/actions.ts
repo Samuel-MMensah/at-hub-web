@@ -9,6 +9,18 @@ interface ActionResult {
   error?: string;
 }
 
+// Same helper as invoice-entry-client.tsx's round2() (duplicated
+// per-file, matching this codebase's established convention). Needed
+// here because raw invoice_total/balance carry float residue from
+// amount/nhil/vat arithmetic (e.g. 1999.9997999999998 for a clean
+// GH₵2,000 invoice — confirmed live on P927488/STEPHEN KABUTEY) — the
+// display already rounds this away, so the validation comparison below
+// must round identically or it rejects a payment the user was shown as
+// exactly payable.
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 async function requireInvoiceEntryAccess() {
   const user = await requireUser();
   if (!hasRole(user.role, [...ADMIN_ROLES, ...FINANCE_ROLES])) {
@@ -189,7 +201,13 @@ export async function recordInvoicePayment(
   }
 
   const currentBalance = current.invoice_total - current.payment;
-  if (paymentAmount > currentBalance) {
+  // Rounded on BOTH sides — comparing a rounded paymentAmount against a
+  // raw currentBalance (or vice versa) is exactly what produced the
+  // false rejection: display showed "GH₵2,000.00" (rounded) while this
+  // check compared against 1999.9997999999998 (raw), so a real,
+  // exact-to-the-display payment was reported as "exceeding" a balance
+  // it was actually equal to.
+  if (round2(paymentAmount) > round2(currentBalance)) {
     return {
       error: `Payment of ${paymentAmount.toFixed(2)} exceeds the outstanding balance of ${currentBalance.toFixed(2)}.`,
     };

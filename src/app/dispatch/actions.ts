@@ -10,6 +10,17 @@ interface ActionResult {
   error?: string;
 }
 
+// Same helper/reasoning as invoice-entry/actions.ts's round2() — the
+// swept-for-and-confirmed-latent counterpart of that same bug class
+// here: total_amount/deposit_amount can carry float residue the same
+// way job_invoices' amount/nhil/vat math does, so this comparison must
+// round identically to whatever the balance display rounds to, or a
+// payment equal to the DISPLAYED balance can be falsely rejected as
+// exceeding the RAW one.
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 async function requireDispatchAccess() {
   const user = await requireUser();
   if (!hasRole(user.role, [...ADMIN_ROLES, ...FINANCE_ROLES])) {
@@ -57,10 +68,11 @@ export async function recordPayment(
   const currentDeposit = Number(current.deposit_amount ?? 0);
   const totalAmount = Number(current.total_amount ?? 0);
   const newDepositTotal = currentDeposit + paymentAmount;
+  const currentBalance = totalAmount - currentDeposit;
 
-  if (newDepositTotal > totalAmount) {
+  if (round2(paymentAmount) > round2(currentBalance)) {
     return {
-      error: `Payment of ${paymentAmount.toFixed(2)} exceeds the outstanding balance of ${(totalAmount - currentDeposit).toFixed(2)}.`,
+      error: `Payment of ${paymentAmount.toFixed(2)} exceeds the outstanding balance of ${currentBalance.toFixed(2)}.`,
     };
   }
 

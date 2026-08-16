@@ -27,6 +27,15 @@ function money(n: number): string {
   return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 }
 
+// Same round2()/comparison-parity fix as recordInvoicePayment (Invoice
+// Entry) and recordPayment (this page's own server action) — the
+// client-side disable check below compares raw state to a raw balance,
+// so it must round the same way the display does or it can block a
+// payment before the (already-fixed) server action even sees it.
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function statusTone(status: string): "success" | "warning" | "danger" | "idle" | "accent" {
   if (status === "At Warehouse") return "warning";
   if (status === "In Production") return "accent";
@@ -168,7 +177,10 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
                 className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
               />
             </div>
-            <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
+            <Button
+              disabled={isPending || payAmt <= 0 || round2(payAmt) > round2(balance)}
+              onClick={handleRecordPayment}
+            >
               Record Payment
             </Button>
           </div>
