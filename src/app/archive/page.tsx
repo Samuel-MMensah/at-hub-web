@@ -9,7 +9,10 @@ import { ArchiveClient, type ArchiveOrderRow } from "./archive-client";
 // get_archive_orders_cached (app.py:1057) — genuinely broader than
 // Command Center's KPI query: includes 'Ready for Collection' and
 // 'Delivered', which Command Center excludes. Do not reuse that query.
-const ARCHIVE_STATUSES = ["Approved", "In Production", "At Warehouse", "Ready for Collection", "Delivered"];
+// Exported — the "approved-and-beyond" status set now has a second real
+// consumer (Uninvoiced Orders); Command Center's own copy predates this
+// export (see its own comment) and is left as-is, not retrofitted.
+export const ARCHIVE_STATUSES = ["Approved", "In Production", "At Warehouse", "Ready for Collection", "Delivered"];
 const ARCHIVE_ROW_CAP = 2000;
 
 async function getArchiveOrders() {
