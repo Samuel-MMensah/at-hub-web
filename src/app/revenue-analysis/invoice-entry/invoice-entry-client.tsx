@@ -92,11 +92,16 @@ export function InvoiceEntryClient({
   invoices,
   clients,
   salesReps,
+  initialOrderNo,
 }: {
   jobOrders: JobOrderOption[];
   invoices: InvoiceRow[];
   clients: ClientOption[];
   salesReps: SalesRepOption[];
+  // Deep-link from Uninvoiced Orders (?order=P123456) — pre-selects
+  // this order in the form below, same friction-reducing intent as
+  // raise-order's own ?resubmit= deep-link.
+  initialOrderNo?: string;
 }) {
   const monthGroups: MonthGroup<InvoiceRow>[] = useMemo(
     () => groupByMonth(invoices, (r) => parseDateOnly(r.date)),
@@ -106,7 +111,7 @@ export function InvoiceEntryClient({
 
   return (
     <div>
-      <InvoiceForm jobOrders={jobOrders} clients={clients} salesReps={salesReps} />
+      <InvoiceForm jobOrders={jobOrders} clients={clients} salesReps={salesReps} initialOrderNo={initialOrderNo} />
 
       <RecordPaymentSection invoices={invoices} />
 
@@ -198,14 +203,34 @@ export function InvoiceEntryClient({
   );
 }
 
+// Shared by both the manual dropdown pick (handleSelectOrder) and the
+// ?order= deep-link initial-state derivation, so the two paths can
+// never drift apart. unitPrice is back-derived from the order's real
+// total_amount so quantity * unitPrice reproduces that total_amount
+// exactly at the moment of linking — not because amount is separately
+// stored, but because amount is ALWAYS quantity * unitPrice (confirmed
+// against all 172 existing rows, zero exceptions).
+function orderAutoFill(order: JobOrderOption) {
+  const qty = order.qty_to_print ?? 0;
+  return {
+    customerName: order.customer_name ?? "",
+    quantity: qty,
+    unitPrice: qty > 0 ? (order.total_amount ?? 0) / qty : 0,
+    selectedClientId: order.client_id ?? ("" as number | ""),
+    salesRep: "",
+  };
+}
+
 function InvoiceForm({
   jobOrders,
   clients,
   salesReps,
+  initialOrderNo,
 }: {
   jobOrders: JobOrderOption[];
   clients: ClientOption[];
   salesReps: SalesRepOption[];
+  initialOrderNo?: string;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -213,15 +238,25 @@ function InvoiceForm({
 
   const [date, setDate] = useState(todayIso());
 
-  const [orderSearch, setOrderSearch] = useState("");
-  const [selectedOrderNo, setSelectedOrderNo] = useState("");
+  // Deep-link pre-fill from Uninvoiced Orders (?order=P123456). Derived
+  // once via lazy useState initializers (not a mount effect calling
+  // setState, which React flags as a cascading-render anti-pattern) —
+  // jobOrders is already available as a prop at first render, so the
+  // matching order (if any) can be resolved directly into initial state,
+  // reusing the exact same auto-fill shape orderAutoFill() below
+  // applies for a manual dropdown pick.
+  const initialOrder = initialOrderNo ? jobOrders.find((o) => o.job_order_no === initialOrderNo) : undefined;
+  const initialFill = initialOrder ? orderAutoFill(initialOrder) : null;
 
-  const [customerName, setCustomerName] = useState("");
+  const [orderSearch, setOrderSearch] = useState(() => initialOrder?.job_order_no ?? "");
+  const [selectedOrderNo, setSelectedOrderNo] = useState(() => initialOrder?.job_order_no ?? "");
+
+  const [customerName, setCustomerName] = useState(() => initialFill?.customerName ?? "");
   const [productDescription, setProductDescription] = useState("");
   const [revenueCategory, setRevenueCategory] = useState<string>("");
   const [businessUnit, setBusinessUnit] = useState<string>("");
-  const [quantity, setQuantity] = useState<number | "">("");
-  const [unitPrice, setUnitPrice] = useState<number | "">("");
+  const [quantity, setQuantity] = useState<number | "">(() => initialFill?.quantity ?? "");
+  const [unitPrice, setUnitPrice] = useState<number | "">(() => initialFill?.unitPrice ?? "");
   const [exempt, setExempt] = useState(false);
   const [payment, setPayment] = useState<number | "">(0);
   const [status, setStatus] = useState<string>("");
@@ -234,8 +269,8 @@ function InvoiceForm({
   // the sales_rep_only_when_unlinked CHECK constraint (and re-checked
   // server-side in recordInvoice, not just hidden in this form).
   const [clientSearch, setClientSearch] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState<number | "">("");
-  const [salesRep, setSalesRep] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<number | "">(() => initialFill?.selectedClientId ?? "");
+  const [salesRep, setSalesRep] = useState(() => initialFill?.salesRep ?? "");
 
   const orderCandidates = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
@@ -266,23 +301,19 @@ function InvoiceForm({
     // Auto-fill, not lock — every field set here stays editable below,
     // same "auto-fill from source, never locked" pattern already used
     // for Unit Cost (Material Receipts) and Customer Name (Material
-    // Issuance). unitPrice is back-derived from the order's real
-    // total_amount so quantity * unitPrice reproduces that total_amount
-    // exactly at the moment of linking — not because amount is
-    // separately stored, but because amount is ALWAYS
-    // quantity * unitPrice (confirmed against all 172 existing rows,
-    // zero exceptions), so this is the only way to "start equal to the
-    // real order value by construction" without a second amount field.
-    setCustomerName(order.customer_name ?? "");
-    const qty = order.qty_to_print ?? 0;
-    setQuantity(qty);
-    setUnitPrice(qty > 0 ? (order.total_amount ?? 0) / qty : 0);
+    // Issuance). Shared with the initial-render deep-link pre-fill
+    // above via orderAutoFill(), so a manual dropdown pick and a
+    // ?order= deep link produce identical results.
+    const fill = orderAutoFill(order);
+    setCustomerName(fill.customerName);
+    setQuantity(fill.quantity);
+    setUnitPrice(fill.unitPrice);
     // client_id comes straight from the order's own real FK — not a
     // name match. No picker shown for this case (see JSX below); it's
     // silently carried through to submission. sales_rep is cleared —
     // hidden/not applicable while linked.
-    setSelectedClientId(order.client_id ?? "");
-    setSalesRep("");
+    setSelectedClientId(fill.selectedClientId);
+    setSalesRep(fill.salesRep);
   }
 
   const numericQuantity = typeof quantity === "number" ? quantity : 0;

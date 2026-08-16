@@ -13,15 +13,20 @@ import {
   type ClientOption,
 } from "@/app/revenue-analysis/invoice-entry/invoice-entry-client";
 import { CategoryReportClient } from "@/app/revenue-analysis/category-report/category-report-client";
+import {
+  UninvoicedOrdersClient,
+  type UninvoicedOrderRow,
+} from "@/app/revenue-analysis/uninvoiced-orders/uninvoiced-orders-client";
 import type { SalesRepOption } from "@/lib/sales-reps";
 
-type TabKey = "dispatch" | "revenue-analysis" | "invoice-entry" | "category-report";
+type TabKey = "dispatch" | "revenue-analysis" | "invoice-entry" | "category-report" | "uninvoiced-orders";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "dispatch", label: "Dispatch" },
   { key: "revenue-analysis", label: "Revenue Analysis" },
   { key: "invoice-entry", label: "Invoice Entry" },
   { key: "category-report", label: "Category Report" },
+  { key: "uninvoiced-orders", label: "Uninvoiced Orders" },
 ];
 
 interface DispatchTabsProps {
@@ -31,6 +36,7 @@ interface DispatchTabsProps {
   invoices: InvoiceRow[];
   clients: ClientOption[];
   salesReps: SalesRepOption[];
+  uninvoicedOrders: UninvoicedOrderRow[];
 }
 
 // Single tab shell for all three — same architecture as
@@ -52,7 +58,15 @@ interface DispatchTabsProps {
 // Receiving content was inline JSX in the Server Component and had to
 // be extracted into a new ReceivingTab function here). Reused as-is,
 // nothing relocated or rebuilt.
-export function DispatchTabs({ orders, revenueInvoices, jobOrders, invoices, clients, salesReps }: DispatchTabsProps) {
+export function DispatchTabs({
+  orders,
+  revenueInvoices,
+  jobOrders,
+  invoices,
+  clients,
+  salesReps,
+  uninvoicedOrders,
+}: DispatchTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("dispatch");
 
   return (
@@ -90,6 +104,7 @@ export function DispatchTabs({ orders, revenueInvoices, jobOrders, invoices, cli
           Entry's own history table (getInvoiceHistory() already selects
           every column this report needs) — no new query for this tab. */}
       {activeTab === "category-report" && <CategoryReportClient invoices={invoices} />}
+      {activeTab === "uninvoiced-orders" && <UninvoicedOrdersClient orders={uninvoicedOrders} />}
     </div>
   );
 }

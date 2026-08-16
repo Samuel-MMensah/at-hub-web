@@ -50,9 +50,16 @@ export async function getInvoiceHistory(): Promise<InvoiceRow[]> {
   return (data ?? []) as InvoiceRow[];
 }
 
-export default async function InvoiceEntryPage() {
+export default async function InvoiceEntryPage({
+  searchParams,
+}: {
+  // Deep-link from Uninvoiced Orders (?order=P123456) — same
+  // await-searchParams pattern as raise-order/page.tsx's ?resubmit=.
+  searchParams: Promise<{ order?: string }>;
+}) {
   const user = await requireUser();
   const allowed = hasRole(user.role, [...ADMIN_ROLES, ...FINANCE_ROLES]);
+  const { order: initialOrderNo } = await searchParams;
 
   const [jobOrders, invoices, clients, salesReps] = allowed
     ? await Promise.all([getJobOrderOptions(), getInvoiceHistory(), getClientOptions(), getSalesReps()])
@@ -73,7 +80,13 @@ export default async function InvoiceEntryPage() {
       {!allowed ? (
         <RestrictedAccess message="Invoice Entry is reserved for finance staff and administrators." />
       ) : (
-        <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} salesReps={salesReps} />
+        <InvoiceEntryClient
+          jobOrders={jobOrders}
+          invoices={invoices}
+          clients={clients}
+          salesReps={salesReps}
+          initialOrderNo={initialOrderNo}
+        />
       )}
     </AppShell>
   );
