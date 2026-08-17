@@ -1703,6 +1703,19 @@ investigated and **deliberately deferred**, not forgotten:
   of truth. The existing files there are a one-time back-capture of all
   DDL applied before this rule existed (see `supabase/migrations/README.md`);
   from now on the folder must not fall behind the database again.
+- **Before any commit, run all three: `tsc --noEmit`, `eslint`, and
+  `npm run build` — a real production build, not just the first two.**
+  A Vercel deploy broke (Uninvoiced Orders' `ARCHIVE_STATUSES` import)
+  even though `tsc`/`eslint` were run and passed clean beforehand: both
+  ran against the local working tree, which already had the fix
+  (`export const ARCHIVE_STATUSES`) applied but *uncommitted* — the
+  commit that shipped left that file's change out, so the pushed `HEAD`
+  Vercel actually built from was still broken. `tsc`/`eslint` checking
+  the working tree is not the same guarantee as `npm run build`
+  succeeding against what's actually about to be committed and pushed;
+  from now on `npm run build` completing with zero errors is a required
+  step before every commit, not an optional extra check after something
+  breaks in production.
 
 ## Implemented design decision — Die Cutter to Folder Gluer scheduling
 

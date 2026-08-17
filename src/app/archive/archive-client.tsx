@@ -62,6 +62,7 @@ interface StatusTab {
 const STATUS_TABS: StatusTab[] = [
   { status: "Approved", tabLabel: "Approved", fullLabel: "Approved" },
   { status: "In Production", tabLabel: "In Production", fullLabel: "In Production" },
+  { status: "At Warehouse", tabLabel: "At Warehouse", fullLabel: "At Warehouse" },
   { status: "Ready for Collection", tabLabel: "Ready", fullLabel: "Ready for Collection" },
   { status: "Delivered", tabLabel: "Delivered", fullLabel: "Delivered" },
 ];
