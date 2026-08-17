@@ -24,7 +24,7 @@ async function getAuditOrders() {
   const { data } = await supabase
     .from("job_orders")
     .select(
-      "id, job_order_no, customer_name, status, created_by, created_at, order_date, approved_by, approval_date, delivered_date, receipt_no"
+      "id, job_order_no, customer_name, status, created_by, created_at, order_date, approved_by, approval_date, delivered_date, receipt_no, department, type_of_print, print_type, total_amount, deposit_amount, date_of_collection, rejection_note"
     )
     .in("status", AUDIT_LOG_STATUSES);
 

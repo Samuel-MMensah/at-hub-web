@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
+import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 
-export interface AuditOrderRow {
+const CURRENCY = "GH₵";
+
+export interface AuditOrderRow extends GarmentClassifiable {
   id: number;
   job_order_no: string | null;
   customer_name: string;
@@ -18,39 +21,71 @@ export interface AuditOrderRow {
   approval_date: string | null;
   delivered_date: string | null;
   receipt_no: string | null;
+  total_amount: number | null;
+  deposit_amount: number | null;
+  date_of_collection: string | null;
+  rejection_note: string | null;
 }
 
+// First 9 columns match Archive's exact format/order (Status moved to
+// front here since Audit Log spans all 8 statuses at once, unlike
+// Archive's tabs which are each pre-filtered to one status already).
+// The last 5 are Audit-Log-specific fields with real audit-trail value
+// that Archive's format doesn't carry (who raised it, when it was
+// approved/delivered, the payment receipt) — kept, not dropped, per
+// explicit sign-off; see git history for the session this landed in.
+// "Warehouse Date" (previously here) is dropped: it has no backing
+// column — warehouse_date isn't a real job_orders column (confirmed via
+// information_schema) and was always rendered blank.
 const COLUMNS = [
+  "Status",
   "Order No",
   "Customer",
-  "Status",
+  "Dept",
+  `Total (${CURRENCY})`,
+  `Deposit (${CURRENCY})`,
+  `Balance (${CURRENCY})`,
+  "Collection",
+  "Auth By",
   "Created By",
   "Order Date",
-  "Approved By",
   "Approval Date",
-  "Warehouse Date",
   "Delivered Date",
   "Receipt No",
+  "Rejection Reason",
 ] as const;
 
-// Warehouse Date has no backing column — warehouse_date isn't a real
-// job_orders column (confirmed via information_schema, and it's never
-// written anywhere in app.py either). app.py's own audit-log route
-// references it via pandas .get('warehouse_date', '') and always falls
-// through to '', so it's blank in production too — this replicates
-// that exactly, not a gap in this port.
+function money(n: number): string {
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+}
+
 function toRow(order: AuditOrderRow): string[] {
+  const total = Number(order.total_amount ?? 0);
+  const deposit = Number(order.deposit_amount ?? 0);
+  const balance = total - deposit; // not clamped — matches Archive's own balance convention
   return [
+    order.status ?? "",
     order.job_order_no ?? "",
     order.customer_name ?? "",
-    order.status ?? "",
+    isGarment(order) ? "GARMENT" : "PRESS",
+    total.toFixed(2),
+    deposit.toFixed(2),
+    balance.toFixed(2),
+    order.date_of_collection ?? "",
+    order.approved_by ?? "",
     order.created_by ?? "",
     order.order_date ?? "",
-    order.approved_by ?? "",
     order.approval_date ?? "",
-    "",
     order.delivered_date ?? "",
     order.receipt_no ?? "",
+    // Gated on status, not just the raw field's nullness — a resubmitted
+    // order that was once Rejected and later re-approved could in
+    // principle still carry a stale rejection_note from that earlier
+    // rejection (the reject action writes it but nothing clears it on
+    // resubmit/approve), so this only surfaces the reason while the
+    // order is actually sitting in Rejected, matching Auth By's own
+    // "blank unless it currently applies" pattern.
+    order.status === "Rejected" ? order.rejection_note ?? "" : "",
   ];
 }
 
@@ -196,15 +231,41 @@ export function AuditLogClient({ orders }: { orders: AuditOrderRow[] }) {
                 </tr>
               </thead>
               <tbody>
-                {month.items.map((order) => (
-                  <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
-                    {toRow(order).map((cell, i) => (
-                      <td key={i} className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        {cell || "—"}
+                {month.items.map((order) => {
+                  const total = Number(order.total_amount ?? 0);
+                  const deposit = Number(order.deposit_amount ?? 0);
+                  const balance = total - deposit; // not clamped — matches Archive's own balance convention
+                  return (
+                    <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.status || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.job_order_no || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.customer_name || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {isGarment(order) ? "GARMENT" : "PRESS"}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{money(total)}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{money(deposit)}</td>
+                      <td
+                        className="whitespace-nowrap px-4 py-2.5 font-semibold"
+                        style={{ color: balance > 0 ? "#ef4444" : "#10b981" }}
+                      >
+                        {money(balance)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {order.date_of_collection || "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.approved_by || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.created_by || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.order_date || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.approval_date || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.delivered_date || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.receipt_no || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {order.status === "Rejected" ? order.rejection_note || "—" : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
