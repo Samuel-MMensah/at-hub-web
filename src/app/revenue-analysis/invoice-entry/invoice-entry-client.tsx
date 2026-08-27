@@ -34,6 +34,11 @@ export interface JobOrderOption {
   qty_to_print: number | null;
   total_amount: number | null;
   client_id: number | null;
+  // The real salesperson for a LINKED invoice (job_invoices.sales_rep is
+  // always null in that case — enforced by sales_rep_only_when_unlinked)
+  // — added for Category Report's Sales Rep column, which joins through
+  // to this field via job_order_no.
+  sales_rep: string | null;
 }
 
 // Phase 1/2's clients table — identity/contact only, no ownership.

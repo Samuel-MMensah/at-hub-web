@@ -855,18 +855,22 @@ def generate_category_report_pdf(
         buffer.seek(0)
         return buffer
 
-    # Same 11 columns, same order, as the Category Report results table on
+    # Same 12 columns, same order, as the Category Report results table on
     # screen and in the CSV export -- one source of truth for "what a
-    # category report contains", just three renderings of it. Payment/
-    # Balance added alongside Amount (excl./incl. tax) -- widths trimmed
-    # across the board (not just appended) to still fit A4's ~7.49in
-    # usable width after the 28pt margins on each side.
+    # category report contains", just three renderings of it. Sales Rep
+    # added alongside Payment/Balance -- widths trimmed across the board
+    # again (not just appended) to still fit A4's ~7.49in usable width
+    # after the 28pt margins on each side. Sales Rep's value here is
+    # already the resolved EFFECTIVE rep (row["sales_rep"], overwritten
+    # by the route above to join through job_orders for linked
+    # invoices) -- this function just renders whatever it's given, same
+    # "route resolves, pdf.py lays out" split as everything else here.
     columns = [
         "Date", "Order No.", "Customer", "Category", "Product",
-        "Business Unit", "Qty", "Amount (excl. tax)", "Amount (incl. tax)",
-        "Payment", "Balance",
+        "Business Unit", "Sales Rep", "Qty", "Amount (excl. tax)",
+        "Amount (incl. tax)", "Payment", "Balance",
     ]
-    col_widths = [w * inch for w in (0.55, 0.62, 1.0, 0.75, 0.85, 0.62, 0.35, 0.72, 0.72, 0.65, 0.66)]
+    col_widths = [w * inch for w in (0.52, 0.58, 0.9, 0.68, 0.78, 0.58, 0.65, 0.32, 0.65, 0.65, 0.58, 0.6)]
 
     table_data = [[Paragraph(c, header_cell_style) for c in columns]]
     total_amount = 0.0
@@ -891,6 +895,7 @@ def generate_category_report_pdf(
             Paragraph(str(row.get("revenue_category") or ""), cell_style),
             Paragraph(str(row.get("product_description") or ""), cell_style),
             Paragraph(str(row.get("business_unit") or ""), cell_style),
+            Paragraph(str(row.get("sales_rep") or ""), cell_style),
             Paragraph(str(quantity) if quantity is not None else "", cell_style),
             Paragraph(f"{amount:,.2f}", cell_style),
             Paragraph(f"{invoice_total:,.2f}", cell_style),
@@ -899,7 +904,7 @@ def generate_category_report_pdf(
         ])
 
     table_data.append([
-        Paragraph("TOTAL", total_style), "", "", "", "", "", "",
+        Paragraph("TOTAL", total_style), "", "", "", "", "", "", "",
         Paragraph(f"{total_amount:,.2f}", total_style),
         Paragraph(f"{total_invoice_total:,.2f}", total_style),
         Paragraph(f"{total_payment:,.2f}", total_style),
@@ -915,7 +920,7 @@ def generate_category_report_pdf(
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("ALIGN", (6, 1), (10, -1), "RIGHT"),  # Qty + all four money columns, incl. the total row
+        ("ALIGN", (7, 1), (11, -1), "RIGHT"),  # Qty + all four money columns, incl. the total row
     ]))
     elements.append(t_body)
     elements.append(Spacer(1, 6))

@@ -100,10 +100,12 @@ export function DispatchTabs({
       {activeTab === "invoice-entry" && (
         <InvoiceEntryClient jobOrders={jobOrders} invoices={invoices} clients={clients} salesReps={salesReps} />
       )}
-      {/* Reuses the SAME `invoices` array already fetched for Invoice
-          Entry's own history table (getInvoiceHistory() already selects
-          every column this report needs) — no new query for this tab. */}
-      {activeTab === "category-report" && <CategoryReportClient invoices={invoices} />}
+      {/* Reuses the SAME `invoices` and `jobOrders` arrays already
+          fetched for Invoice Entry's own tab above (getInvoiceHistory()
+          already selects every column this report needs; jobOrders now
+          also carries sales_rep, for the Sales Rep column's join-through
+          on linked invoices) — no new query for this tab. */}
+      {activeTab === "category-report" && <CategoryReportClient invoices={invoices} jobOrders={jobOrders} />}
       {activeTab === "uninvoiced-orders" && <UninvoicedOrdersClient orders={uninvoicedOrders} />}
     </div>
   );

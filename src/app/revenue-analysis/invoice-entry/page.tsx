@@ -20,11 +20,14 @@ import { getSalesReps } from "@/lib/sales-reps";
 // otherwise untouched and still works standalone at its own URL.
 // client_id added in Phase 3 — the real FK, so the form can auto-fill
 // it directly off a selected order instead of a name match.
+// sales_rep added for Category Report's Sales Rep column — reuses this
+// already-fetched-everywhere-it's-needed query rather than a new one;
+// see category-report-client.tsx's effectiveSalesRep().
 export async function getJobOrderOptions(): Promise<JobOrderOption[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_orders")
-    .select("job_order_no, customer_name, status, qty_to_print, total_amount, client_id")
+    .select("job_order_no, customer_name, status, qty_to_print, total_amount, client_id, sales_rep")
     .order("job_order_no", { ascending: true });
   return (data ?? []) as JobOrderOption[];
 }
