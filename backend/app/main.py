@@ -100,37 +100,57 @@ def generate_manifest(payload: ManifestRequest, user=Depends(require_user)):
     )
 
 
+REVENUE_CATEGORIES = [
+    "Large Format", "Screen Print", "Embroidery", "Digital Press",
+    "Commercial Press", "Publishing", "Packaging",
+]
+
+
 class CategoryReportRequest(BaseModel):
-    # None/omitted = "All Categories" (no revenue_category filter) —
-    # matches the frontend's own dropdown, which sends the same shape.
-    category: str | None = None
+    # Always a non-empty list from the real UI (Generate is disabled
+    # client-side until at least one category is checked) — no more
+    # None="All Categories" special case. Selecting all 7 individually
+    # produces the same filtered set as the old unfiltered query, since
+    # .in_() against every real category value matches everything.
+    categories: list[str]
     from_date: str  # YYYY-MM-DD
     to_date: str  # YYYY-MM-DD
 
 
 @app.post("/pdf/category-report")
 def category_report_pdf(payload: CategoryReportRequest, user=Depends(require_user)):
+    # Defense in depth — the real UI never sends an empty list (Generate
+    # is disabled until >=1 category is picked), but this endpoint
+    # doesn't trust the client for anything else either (see below).
+    if not payload.categories:
+        raise HTTPException(status_code=400, detail="Select at least one category.")
+
     # Re-queries job_invoices itself via the service-role client, rather
     # than trusting a client-supplied row list — same "DB truth, not
     # caller-supplied data" posture as /pdf/manifest above (a client
     # could otherwise hand this endpoint fabricated rows/totals to
     # produce a fraudulent-looking official report).
     supabase = get_supabase()
-    query = (
+    rows = (
         supabase.table("job_invoices")
         .select(
             "date, job_order_no, customer_name, revenue_category, product_description, "
-            "business_unit, quantity, amount, invoice_total"
+            "business_unit, quantity, amount, invoice_total, payment, balance"
         )
         .gte("date", payload.from_date)
         .lte("date", payload.to_date)
+        .in_("revenue_category", payload.categories)
         .order("date")
+        .execute()
+        .data
+        or []
     )
-    if payload.category:
-        query = query.eq("revenue_category", payload.category)
-    rows = query.execute().data or []
 
-    category_label = payload.category or "All Categories"
+    # Same equivalence the frontend's own label/filename use — all 7
+    # selected reads and files identically to the old "All Categories".
+    category_label = (
+        "All Categories" if set(payload.categories) == set(REVENUE_CATEGORIES) else ", ".join(payload.categories)
+    )
     pdf_buffer = generate_category_report_pdf(rows, category_label, payload.from_date, payload.to_date)
 
     safe_category = sanitize_customer_name_for_filename(category_label, max_length=30)

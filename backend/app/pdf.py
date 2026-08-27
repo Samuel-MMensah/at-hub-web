@@ -855,23 +855,33 @@ def generate_category_report_pdf(
         buffer.seek(0)
         return buffer
 
-    # Same 9 columns, same order, as the Category Report results table on
+    # Same 11 columns, same order, as the Category Report results table on
     # screen and in the CSV export -- one source of truth for "what a
-    # category report contains", just three renderings of it.
+    # category report contains", just three renderings of it. Payment/
+    # Balance added alongside Amount (excl./incl. tax) -- widths trimmed
+    # across the board (not just appended) to still fit A4's ~7.49in
+    # usable width after the 28pt margins on each side.
     columns = [
         "Date", "Order No.", "Customer", "Category", "Product",
         "Business Unit", "Qty", "Amount (excl. tax)", "Amount (incl. tax)",
+        "Payment", "Balance",
     ]
-    col_widths = [w * inch for w in (0.62, 0.68, 1.15, 0.85, 1.05, 0.72, 0.4, 0.85, 0.85)]
+    col_widths = [w * inch for w in (0.55, 0.62, 1.0, 0.75, 0.85, 0.62, 0.35, 0.72, 0.72, 0.65, 0.66)]
 
     table_data = [[Paragraph(c, header_cell_style) for c in columns]]
     total_amount = 0.0
     total_invoice_total = 0.0
+    total_payment = 0.0
+    total_balance = 0.0
     for row in rows:
         amount = float(row.get("amount") or 0)
         invoice_total = float(row.get("invoice_total") or 0)
+        payment = float(row.get("payment") or 0)
+        balance = float(row.get("balance") or 0)
         total_amount += amount
         total_invoice_total += invoice_total
+        total_payment += payment
+        total_balance += balance
         quantity = row.get("quantity")
         table_data.append([
             Paragraph(str(row.get("date", "") or ""), cell_style),
@@ -884,12 +894,16 @@ def generate_category_report_pdf(
             Paragraph(str(quantity) if quantity is not None else "", cell_style),
             Paragraph(f"{amount:,.2f}", cell_style),
             Paragraph(f"{invoice_total:,.2f}", cell_style),
+            Paragraph(f"{payment:,.2f}", cell_style),
+            Paragraph(f"{balance:,.2f}", cell_style),
         ])
 
     table_data.append([
         Paragraph("TOTAL", total_style), "", "", "", "", "", "",
         Paragraph(f"{total_amount:,.2f}", total_style),
         Paragraph(f"{total_invoice_total:,.2f}", total_style),
+        Paragraph(f"{total_payment:,.2f}", total_style),
+        Paragraph(f"{total_balance:,.2f}", total_style),
     ])
 
     t_body = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -901,10 +915,18 @@ def generate_category_report_pdf(
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("ALIGN", (6, 1), (8, -1), "RIGHT"),  # Qty + both amount columns, incl. the total row
+        ("ALIGN", (6, 1), (10, -1), "RIGHT"),  # Qty + all four money columns, incl. the total row
     ]))
     elements.append(t_body)
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(
+        f"<b>Outstanding:</b> {total_balance:,.2f}",
+        ParagraphStyle(
+            "Outstanding", parent=styles["Normal"], fontName="Helvetica", fontSize=9.5,
+            textColor=colors.HexColor("#0f172a"),
+        ),
+    ))
+    elements.append(Spacer(1, 6))
     elements.append(Paragraph(
         f"Generated {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}", small_grey
     ))

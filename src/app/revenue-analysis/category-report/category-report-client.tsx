@@ -33,8 +33,25 @@ const REPORT_COLUMNS = [
   "Qty",
   "Amount (excl. tax)",
   "Amount (incl. tax)",
+  "Payment",
+  "Balance",
 ];
-const RIGHT_ALIGNED_COLUMNS = new Set(["Qty", "Amount (excl. tax)", "Amount (incl. tax)"]);
+const RIGHT_ALIGNED_COLUMNS = new Set([
+  "Qty",
+  "Amount (excl. tax)",
+  "Amount (incl. tax)",
+  "Payment",
+  "Balance",
+]);
+
+// "All Categories" is no longer a distinct filter value (the dropdown
+// is gone) — selecting all 7 individually is functionally identical
+// (categories.includes() matches everything), but the label/filename
+// still reads "All Categories" in that case rather than a 7-item list,
+// for continuity with the old single-select behavior.
+function categoryLabel(categories: string[]): string {
+  return categories.length === REVENUE_CATEGORIES.length ? "All Categories" : categories.join(", ");
+}
 
 function money(n: number): string {
   return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -82,6 +99,8 @@ function rowToCsv(r: InvoiceRow): string[] {
     String(r.quantity),
     r.amount.toFixed(2),
     r.invoice_total.toFixed(2),
+    r.payment.toFixed(2),
+    r.balance.toFixed(2),
   ];
 }
 
@@ -97,11 +116,11 @@ type PdfState =
 // single order_id), so this is its own component rather than forcing
 // that one to serve two different endpoints.
 function CategoryReportPdfButton({
-  category,
+  categories,
   fromDate,
   toDate,
 }: {
-  category: string; // "" = All Categories
+  categories: string[]; // always non-empty — Generate is disabled otherwise
   fromDate: string;
   toDate: string;
 }) {
@@ -130,7 +149,7 @@ function CategoryReportPdfButton({
       const res = await fetch(`${BACKEND_URL}/pdf/category-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ category: category || null, from_date: fromDate, to_date: toDate }),
+        body: JSON.stringify({ categories, from_date: fromDate, to_date: toDate }),
       });
 
       if (!res.ok) {
@@ -206,14 +225,18 @@ function CategoryReportPdfButton({
 }
 
 export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
-  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [dateError, setDateError] = useState<string | null>(null);
   const [generated, setGenerated] = useState(false);
   const [reportRows, setReportRows] = useState<InvoiceRow[]>([]);
 
-  const canGenerate = fromDate !== "" && toDate !== "";
+  const canGenerate = fromDate !== "" && toDate !== "" && categories.length > 0;
+
+  function toggleCategory(cat: string) {
+    setCategories((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
+  }
 
   function handleGenerate() {
     setDateError(null);
@@ -224,7 +247,7 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
     }
     const filtered = invoices.filter((r) => {
       if (r.date < fromDate || r.date > toDate) return false;
-      if (category && r.revenue_category !== category) return false;
+      if (!categories.includes(r.revenue_category)) return false;
       return true;
     });
     // Chronological — a report reads top-to-bottom in date order, same
@@ -242,10 +265,14 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
 
   const totalAmount = reportRows.reduce((sum, r) => sum + r.amount, 0);
   const totalInvoiceTotal = reportRows.reduce((sum, r) => sum + r.invoice_total, 0);
+  // Not clamped — matches this app's own convention (Invoice History,
+  // Dispatch): balance is a real signed figure, never force-corrected
+  // to zero at read/summary time.
+  const totalOutstanding = reportRows.reduce((sum, r) => sum + r.balance, 0);
 
   function exportCsv() {
     downloadCsv(
-      `ATP_category_report_${(category || "AllCategories").replace(/[^a-z0-9]+/gi, "_")}`,
+      `ATP_category_report_${categoryLabel(categories).replace(/[^a-z0-9]+/gi, "_")}`,
       REPORT_COLUMNS,
       reportRows.map(rowToCsv)
     );
@@ -256,24 +283,38 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
         <div className="mb-4 text-base font-bold text-at-navy">Category Report</div>
 
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-              Category
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-            >
-              <option value="">All Categories</option>
-              {REVENUE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
+        {/* Multi-select pill toggle, same convention as Audit Log's own
+            status filter (audit-log-client.tsx) — not a fresh UI pattern.
+            No explicit "All Categories" option anymore: picking all 7
+            individually produces the same filtered result (see
+            categoryLabel() above for the matching label/filename
+            equivalence). */}
+        <div className="mb-4">
+          <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+            Categories
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {REVENUE_CATEGORIES.map((c) => {
+              const active = categories.includes(c);
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => toggleCategory(c)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                    active
+                      ? "border-at-navy bg-at-navy text-at-white"
+                      : "border-at-border bg-at-white text-at-slate hover:border-at-accent"
+                  }`}
+                >
                   {c}
-                </option>
-              ))}
-            </select>
+                </button>
+              );
+            })}
           </div>
+        </div>
+
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
               From Date
@@ -310,16 +351,19 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-at-slate">
               <strong className="text-at-navy">{reportRows.length}</strong> invoice
-              {reportRows.length === 1 ? "" : "s"} · {category || "All Categories"} · {fromDate} to {toDate} · Amount
+              {reportRows.length === 1 ? "" : "s"} · {categoryLabel(categories)} · {fromDate} to {toDate} · Amount
               (excl. tax): <strong className="text-at-navy">{money(totalAmount)}</strong> · Amount (incl. tax):{" "}
-              <strong className="text-at-navy">{money(totalInvoiceTotal)}</strong>
+              <strong className="text-at-navy">{money(totalInvoiceTotal)}</strong> · Outstanding:{" "}
+              <strong style={{ color: totalOutstanding > 0 ? "#ef4444" : "#10b981" }}>
+                {money(totalOutstanding)}
+              </strong>
             </div>
             {reportRows.length > 0 && (
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={exportCsv}>
                   ⬇️ Export CSV
                 </Button>
-                <CategoryReportPdfButton category={category} fromDate={fromDate} toDate={toDate} />
+                <CategoryReportPdfButton categories={categories} fromDate={fromDate} toDate={toDate} />
               </div>
             )}
           </div>
@@ -374,6 +418,15 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-at-navy">
                             {money(r.invoice_total)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">
+                            {money(r.payment)}
+                          </td>
+                          <td
+                            className="whitespace-nowrap px-4 py-2.5 text-right font-bold"
+                            style={{ color: r.balance > 0 ? "#ef4444" : "#10b981" }}
+                          >
+                            {money(r.balance)}
                           </td>
                         </tr>
                       ))}
