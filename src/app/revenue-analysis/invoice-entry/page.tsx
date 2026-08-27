@@ -44,7 +44,7 @@ export async function getInvoiceHistory(): Promise<InvoiceRow[]> {
   const { data } = await supabase
     .from("job_invoices")
     .select(
-      "id, date, job_order_no, customer_name, product_description, revenue_category, business_unit, quantity, unit_price, amount, nhil, vat, invoice_total, payment, balance, status, oracle_no"
+      "id, date, job_order_no, customer_name, product_description, revenue_category, business_unit, quantity, unit_price, amount, nhil, vat, invoice_total, payment, balance, status, oracle_no, client_id, sales_rep, edited_by, edited_at"
     )
     .order("date", { ascending: false });
   return (data ?? []) as InvoiceRow[];

@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
-import { recordInvoice, recordInvoicePayment } from "./actions";
+import { recordInvoice, recordInvoicePayment, updateInvoice } from "./actions";
 import type { SalesRepOption } from "@/lib/sales-reps";
 
 const CURRENCY = "GH₵";
@@ -62,6 +62,10 @@ export interface InvoiceRow {
   balance: number;
   status: string | null;
   oracle_no: string | null;
+  client_id: number | null;
+  sales_rep: string | null;
+  edited_by: string | null;
+  edited_at: string | null;
 }
 
 function money(n: number): string {
@@ -87,6 +91,24 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Same pattern as material-receipts-client.tsx's EditedBadge — small,
+// subtle indicator that a row isn't in its original state; title
+// attribute carries the full precision (who + exact timestamp) since
+// the visible badge itself only has room for a short date.
+function EditedBadge({ editedBy, editedAt }: { editedBy: string | null; editedAt: string | null }) {
+  if (!editedAt) return null;
+  const d = new Date(editedAt);
+  const short = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return (
+    <span
+      title={`Edited by ${editedBy ?? "unknown"} on ${d.toLocaleString()}`}
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-800"
+    >
+      edited {short}
+    </span>
+  );
+}
+
 export function InvoiceEntryClient({
   jobOrders,
   invoices,
@@ -109,9 +131,32 @@ export function InvoiceEntryClient({
   );
   const currentKey = currentMonthKey();
 
+  // Same edit-in-place pattern as material-receipts-client.tsx: a
+  // selected row's id drives which invoice InvoiceForm pre-fills as an
+  // edit, the parent forces a remount via key={editingInvoice?.id ??
+  // "new"} so the form's own useState initializers only need to run
+  // once per "which row", and onSaved/onCancelEdit both just clear the
+  // selection to fall back to create mode.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const editingInvoice = invoices.find((r) => r.id === editingId) ?? null;
+
+  function handleEditClick(id: number) {
+    setEditingId(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
     <div>
-      <InvoiceForm jobOrders={jobOrders} clients={clients} salesReps={salesReps} initialOrderNo={initialOrderNo} />
+      <InvoiceForm
+        key={editingInvoice?.id ?? "new"}
+        jobOrders={jobOrders}
+        clients={clients}
+        salesReps={salesReps}
+        initialOrderNo={initialOrderNo}
+        editingInvoice={editingInvoice}
+        onCancelEdit={() => setEditingId(null)}
+        onSaved={() => setEditingId(null)}
+      />
 
       <RecordPaymentSection invoices={invoices} />
 
@@ -149,6 +194,7 @@ export function InvoiceEntryClient({
                       "Payment",
                       "Balance",
                       "Status",
+                      "",
                     ].map((col) => (
                       <th
                         key={col}
@@ -166,7 +212,10 @@ export function InvoiceEntryClient({
                 <tbody>
                   {month.items.map((r) => (
                     <tr key={r.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{r.date}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                        {r.date}
+                        <EditedBadge editedBy={r.edited_by} editedAt={r.edited_at} />
+                      </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{r.job_order_no || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-at-navy">
                         {r.customer_name || "—"}
@@ -191,6 +240,15 @@ export function InvoiceEntryClient({
                         {money(r.balance)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">{r.status || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleEditClick(r.id)}
+                          className="text-xs font-semibold text-at-accent hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -221,46 +279,77 @@ function orderAutoFill(order: JobOrderOption) {
   };
 }
 
+interface InvoiceFormProps {
+  jobOrders: JobOrderOption[];
+  clients: ClientOption[];
+  salesReps: SalesRepOption[];
+  initialOrderNo?: string;
+  editingInvoice?: InvoiceRow | null;
+  onCancelEdit?: () => void;
+  onSaved?: () => void;
+}
+
+// Reused for both create and edit — not a second form component, same
+// "one form, driven by an optional editing row" pattern already
+// established for material-receipts-client.tsx's ReceiptForm. The
+// parent forces a remount (key={editingInvoice?.id ?? "new"}) whenever
+// the selected row changes, so every useState initializer below only
+// needs to run once per "which invoice", not react to prop changes.
 function InvoiceForm({
   jobOrders,
   clients,
   salesReps,
   initialOrderNo,
-}: {
-  jobOrders: JobOrderOption[];
-  clients: ClientOption[];
-  salesReps: SalesRepOption[];
-  initialOrderNo?: string;
-}) {
+  editingInvoice = null,
+  onCancelEdit,
+  onSaved,
+}: InvoiceFormProps) {
+  const isEditing = editingInvoice !== null;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(() => editingInvoice?.date ?? todayIso());
 
-  // Deep-link pre-fill from Uninvoiced Orders (?order=P123456). Derived
-  // once via lazy useState initializers (not a mount effect calling
-  // setState, which React flags as a cascading-render anti-pattern) —
-  // jobOrders is already available as a prop at first render, so the
-  // matching order (if any) can be resolved directly into initial state,
-  // reusing the exact same auto-fill shape orderAutoFill() below
-  // applies for a manual dropdown pick.
-  const initialOrder = initialOrderNo ? jobOrders.find((o) => o.job_order_no === initialOrderNo) : undefined;
+  // Deep-link pre-fill from Uninvoiced Orders (?order=P123456) — only
+  // relevant when there's no invoice already being edited; editing an
+  // existing invoice always wins over a stale ?order= param from
+  // whatever link got the user here.
+  const initialOrder =
+    !editingInvoice && initialOrderNo ? jobOrders.find((o) => o.job_order_no === initialOrderNo) : undefined;
   const initialFill = initialOrder ? orderAutoFill(initialOrder) : null;
 
-  const [orderSearch, setOrderSearch] = useState(() => initialOrder?.job_order_no ?? "");
-  const [selectedOrderNo, setSelectedOrderNo] = useState(() => initialOrder?.job_order_no ?? "");
+  const [orderSearch, setOrderSearch] = useState(
+    () => editingInvoice?.job_order_no ?? initialOrder?.job_order_no ?? ""
+  );
+  const [selectedOrderNo, setSelectedOrderNo] = useState(
+    () => editingInvoice?.job_order_no ?? initialOrder?.job_order_no ?? ""
+  );
 
-  const [customerName, setCustomerName] = useState(() => initialFill?.customerName ?? "");
-  const [productDescription, setProductDescription] = useState("");
-  const [revenueCategory, setRevenueCategory] = useState<string>("");
-  const [businessUnit, setBusinessUnit] = useState<string>("");
-  const [quantity, setQuantity] = useState<number | "">(() => initialFill?.quantity ?? "");
-  const [unitPrice, setUnitPrice] = useState<number | "">(() => initialFill?.unitPrice ?? "");
-  const [exempt, setExempt] = useState(false);
+  const [customerName, setCustomerName] = useState(
+    () => editingInvoice?.customer_name ?? initialFill?.customerName ?? ""
+  );
+  const [productDescription, setProductDescription] = useState(() => editingInvoice?.product_description ?? "");
+  const [revenueCategory, setRevenueCategory] = useState<string>(() => editingInvoice?.revenue_category ?? "");
+  const [businessUnit, setBusinessUnit] = useState<string>(() => editingInvoice?.business_unit ?? "");
+  const [quantity, setQuantity] = useState<number | "">(() => editingInvoice?.quantity ?? initialFill?.quantity ?? "");
+  const [unitPrice, setUnitPrice] = useState<number | "">(
+    () => editingInvoice?.unit_price ?? initialFill?.unitPrice ?? ""
+  );
+  // No stored `exempt` column — reconstructed the same way this codebase
+  // already reasons about the 8 real historical exempt rows: nhil=0 AND
+  // vat=0 on the existing invoice means it was recorded exempt.
+  const [exempt, setExempt] = useState(() => (editingInvoice ? editingInvoice.nhil === 0 && editingInvoice.vat === 0 : false));
+  // payment is create-only — never pre-filled from editingInvoice, never
+  // sent by updateInvoice; Record Payment remains the only place that
+  // changes it (confirmed decision, see actions.ts).
   const [payment, setPayment] = useState<number | "">(0);
-  const [status, setStatus] = useState<string>("");
-  const [oracleNo, setOracleNo] = useState("");
+  const [status, setStatus] = useState<string>(() => editingInvoice?.status ?? "");
+  const [oracleNo, setOracleNo] = useState(() => editingInvoice?.oracle_no ?? "");
+  // Warning-gate acknowledgement for editing an invoice that already has
+  // payment recorded — resets to false on every remount (a fresh row
+  // selection, or switching back to create mode), never carried over.
+  const [warningAcknowledged, setWarningAcknowledged] = useState(false);
 
   // Phase 3: client_id (real FK) + sales_rep. sales_rep is ONLY
   // meaningful/shown when this invoice is standalone (no linked job
@@ -269,8 +358,10 @@ function InvoiceForm({
   // the sales_rep_only_when_unlinked CHECK constraint (and re-checked
   // server-side in recordInvoice, not just hidden in this form).
   const [clientSearch, setClientSearch] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState<number | "">(() => initialFill?.selectedClientId ?? "");
-  const [salesRep, setSalesRep] = useState(() => initialFill?.salesRep ?? "");
+  const [selectedClientId, setSelectedClientId] = useState<number | "">(
+    () => editingInvoice?.client_id ?? initialFill?.selectedClientId ?? ""
+  );
+  const [salesRep, setSalesRep] = useState(() => editingInvoice?.sales_rep ?? initialFill?.salesRep ?? "");
 
   const orderCandidates = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
@@ -323,6 +414,15 @@ function InvoiceForm({
   const vat = exempt ? 0 : amount * 0.15;
   const invoiceTotal = amount + nhil + vat;
 
+  // Warning gate: editing an invoice that already has a real payment
+  // recorded requires acknowledging that changing the amount can leave
+  // that payment inconsistent with the new total (confirmed decision —
+  // see updateInvoice in actions.ts for the actual mechanics this warns
+  // about). round2'd, matching every other payment-residue check in
+  // this file — a float-residue near-zero payment doesn't spuriously
+  // trigger the gate.
+  const hasExistingPayment = isEditing && round2(editingInvoice.payment) > 0;
+
   const canSubmit =
     date !== "" &&
     revenueCategory !== "" &&
@@ -331,24 +431,24 @@ function InvoiceForm({
     quantity > 0 &&
     typeof unitPrice === "number" &&
     unitPrice >= 0 &&
-    typeof payment === "number" &&
-    payment >= 0;
+    (isEditing || (typeof payment === "number" && payment >= 0)) &&
+    (!hasExistingPayment || warningAcknowledged);
 
   function handleSubmit() {
-    if (!canSubmit || typeof quantity !== "number" || typeof unitPrice !== "number" || typeof payment !== "number") {
+    if (!canSubmit || typeof quantity !== "number" || typeof unitPrice !== "number") {
       return;
     }
     setError(null);
     setSuccess(null);
     startTransition(async () => {
-      const result = await recordInvoice({
+      const sharedFields = {
         date,
         jobOrderNo: selectedOrderNo || null,
         customerName,
         clientId: selectedClientId === "" ? null : selectedClientId,
-        // Only ever sent when standalone — recordInvoice re-nulls it
-        // server-side anyway if jobOrderNo is set, but the form
-        // shouldn't even offer to send a value that can't be used.
+        // Only ever sent when standalone — recordInvoice/updateInvoice
+        // re-null it server-side anyway if jobOrderNo is set, but the
+        // form shouldn't even offer to send a value that can't be used.
         salesRep: selectedOrderNo ? null : salesRep || null,
         productDescription,
         revenueCategory,
@@ -356,12 +456,19 @@ function InvoiceForm({
         quantity,
         unitPrice,
         exempt,
-        payment,
         status: status || null,
         oracleNo,
-      });
+      };
+
+      const result =
+        isEditing && editingInvoice
+          ? await updateInvoice(editingInvoice.id, sharedFields)
+          : await recordInvoice({ ...sharedFields, payment: typeof payment === "number" ? payment : 0 });
+
       if (result.error) {
         setError(result.error);
+      } else if (isEditing) {
+        onSaved?.();
       } else {
         setSuccess(`Invoice recorded: ${money(invoiceTotal)} — ${customerName || "no customer name"}.`);
         setSelectedOrderNo("");
@@ -385,7 +492,20 @@ function InvoiceForm({
 
   return (
     <div className="rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm">
-      <div className="mb-4 text-base font-bold text-at-navy">Record an Invoice</div>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-base font-bold text-at-navy">
+          {isEditing ? `Edit Invoice — ${editingInvoice.customer_name || "—"}` : "Record an Invoice"}
+        </div>
+        {isEditing && (
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="text-xs font-semibold text-at-slate hover:text-at-navy"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
 
       <div className="mb-4">
         <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
@@ -601,19 +721,24 @@ function InvoiceForm({
       </div>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-            Payment ({CURRENCY})
-          </label>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
-            value={payment}
-            onChange={(e) => setPayment(e.target.value === "" ? "" : Number(e.target.value))}
-            className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-          />
-        </div>
+        {/* Payment is create-only — editing an existing invoice never
+            shows or changes it; Record Payment (below, on the History
+            table's rows) remains the only place that does. */}
+        {!isEditing && (
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              Payment ({CURRENCY})
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              value={payment}
+              onChange={(e) => setPayment(e.target.value === "" ? "" : Number(e.target.value))}
+              className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </div>
+        )}
         <div>
           <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
             Status
@@ -643,11 +768,35 @@ function InvoiceForm({
         />
       </div>
 
+      {/* Warning gate — confirmed decision: editing an invoice that
+          already has payment > 0 must not silently let quantity/price
+          changes drift the total away from what was actually paid. Save
+          stays disabled (see canSubmit) until this is acknowledged. */}
+      {hasExistingPayment && (
+        <div className="mb-4 rounded-lg border border-amber-300 border-l-4 border-l-amber-600 bg-gradient-to-br from-amber-50 to-amber-100 px-4 py-3">
+          <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-amber-800">
+            ⚠️ Payment Already Recorded
+          </div>
+          <div className="mb-2 text-sm text-amber-900">
+            This invoice already has {money(round2(editingInvoice.payment))} recorded as paid. Changing the
+            amount may make the payment inconsistent with the new total.
+          </div>
+          <label className="flex items-center gap-2 text-sm text-amber-900">
+            <input
+              type="checkbox"
+              checked={warningAcknowledged}
+              onChange={(e) => setWarningAcknowledged(e.target.checked)}
+            />
+            I understand — save anyway
+          </label>
+        </div>
+      )}
+
       {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
       {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
 
       <Button disabled={!canSubmit || isPending} onClick={handleSubmit}>
-        Record Invoice
+        {isEditing ? "Save Changes" : "Record Invoice"}
       </Button>
     </div>
   );

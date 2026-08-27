@@ -46,6 +46,88 @@ const REVENUE_CATEGORIES = [
 // once the DB and the UI dropdown allowed the new values).
 const BUSINESS_UNITS = ["WALK-IN", "PRIVATE", "GOVERNMENT", "SUBSIDIARY", "SAMPLE", "CSR", "REPLACEMENT"] as const;
 
+// Shared by recordInvoice and updateInvoice — the field-level validation
+// is identical for both (the only real difference between create and
+// edit is what happens to payment/balance/receipt_no afterward, handled
+// separately in each function below), so this exists once rather than
+// as two copies that could quietly drift apart.
+function validateInvoiceFields(input: {
+  date: string;
+  revenueCategory: string;
+  businessUnit: string;
+  quantity: number;
+  unitPrice: number;
+  status: string | null;
+}): string | null {
+  if (!input.date) return "Date is required.";
+  if (!REVENUE_CATEGORIES.includes(input.revenueCategory as (typeof REVENUE_CATEGORIES)[number])) {
+    return "Select a valid revenue category.";
+  }
+  if (!BUSINESS_UNITS.includes(input.businessUnit as (typeof BUSINESS_UNITS)[number])) {
+    return "Select a valid business unit.";
+  }
+  if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
+    return "Quantity must be greater than 0.";
+  }
+  if (!Number.isFinite(input.unitPrice) || input.unitPrice < 0) {
+    return "Unit price cannot be negative.";
+  }
+  if (input.status !== null && input.status !== "DELIVERED" && input.status !== "IN PRODUCTION") {
+    return "Invalid status.";
+  }
+  return null;
+}
+
+// Server-side is the one place amount/nhil/vat/invoice_total are
+// actually computed — the client-side preview mirrors this exact
+// formula (see invoice-entry-client.tsx) but this is the value that
+// actually gets written, not whatever the client happened to display.
+// Formula confirmed against all 172 real imported rows before writing
+// this: amount = quantity * unit_price (0 mismatches), nhil/vat = 5%/
+// 15% of amount for 164 rows, exactly 0/0 (exempt) for the other 8 —
+// hence the exempt flag rather than a hardcoded 5%/15% with no way to
+// represent those 8 real cases. Shared by recordInvoice and
+// updateInvoice — an edit that changes quantity/unit_price/exempt
+// recomputes through this exact same formula, never a second copy.
+function computeInvoiceAmounts(quantity: number, unitPrice: number, exempt: boolean) {
+  const amount = quantity * unitPrice;
+  const nhil = exempt ? 0 : amount * 0.05;
+  const vat = exempt ? 0 : amount * 0.15;
+  const invoiceTotal = amount + nhil + vat;
+  return { amount, nhil, vat, invoiceTotal };
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
+// Phase 3: client_id / sales_rep. When a job order is linked, both
+// values are re-derived server-side from that order's own row rather
+// than trusted from the client — client_id because the browser's copy
+// of job_orders could be stale (another tab/session relinked the
+// order's client in between), and sales_rep because it must be null
+// whenever job_order_no is set regardless of what the form sent
+// (sales_rep_only_when_unlinked enforces this at the DB level too —
+// this is defense in depth, not the only gate). Shared by recordInvoice
+// and updateInvoice, including for RE-linking on edit (attaching or
+// swapping a job_order_no on an existing invoice goes through this
+// exact same re-derivation, not a forked copy).
+async function resolveClientAndSalesRep(
+  supabase: SupabaseServerClient,
+  jobOrderNo: string | null,
+  clientId: number | null,
+  salesRep: string | null
+): Promise<{ clientId: number | null; salesRep: string | null; error?: string }> {
+  if (!jobOrderNo) return { clientId, salesRep };
+  const { data: order, error } = await supabase
+    .from("job_orders")
+    .select("client_id")
+    .eq("job_order_no", jobOrderNo)
+    .single();
+  if (error || !order) {
+    return { clientId, salesRep, error: error?.message ?? "Linked job order not found." };
+  }
+  return { clientId: order.client_id, salesRep: null };
+}
+
 export interface RecordInvoiceInput {
   date: string;
   jobOrderNo: string | null;
@@ -63,76 +145,29 @@ export interface RecordInvoiceInput {
   oracleNo: string;
 }
 
-// Server-side is the one place amount/nhil/vat/invoice_total/balance
-// are actually computed — the client-side preview mirrors this exact
-// formula (see invoice-entry-client.tsx) but this is the value that
-// actually gets written, not whatever the client happened to display.
-// Formula confirmed against all 172 real imported rows before writing
-// this: amount = quantity * unit_price (0 mismatches), nhil/vat = 5%/
-// 15% of amount for 164 rows, exactly 0/0 (exempt) for the other 8 —
-// hence the exempt flag rather than a hardcoded 5%/15% with no way to
-// represent those 8 real cases. balance = invoice_total - payment
-// (0 mismatches across all 172).
 export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionResult> {
   await requireInvoiceEntryAccess();
 
-  if (!input.date) return { error: "Date is required." };
-  if (!REVENUE_CATEGORIES.includes(input.revenueCategory as (typeof REVENUE_CATEGORIES)[number])) {
-    return { error: "Select a valid revenue category." };
-  }
-  if (!BUSINESS_UNITS.includes(input.businessUnit as (typeof BUSINESS_UNITS)[number])) {
-    return { error: "Select a valid business unit." };
-  }
-  if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
-    return { error: "Quantity must be greater than 0." };
-  }
-  if (!Number.isFinite(input.unitPrice) || input.unitPrice < 0) {
-    return { error: "Unit price cannot be negative." };
-  }
+  const fieldError = validateInvoiceFields(input);
+  if (fieldError) return { error: fieldError };
   if (!Number.isFinite(input.payment) || input.payment < 0) {
     return { error: "Payment cannot be negative." };
   }
-  if (input.status !== null && input.status !== "DELIVERED" && input.status !== "IN PRODUCTION") {
-    return { error: "Invalid status." };
-  }
 
-  const amount = input.quantity * input.unitPrice;
-  const nhil = input.exempt ? 0 : amount * 0.05;
-  const vat = input.exempt ? 0 : amount * 0.15;
-  const invoiceTotal = amount + nhil + vat;
+  const { amount, nhil, vat, invoiceTotal } = computeInvoiceAmounts(input.quantity, input.unitPrice, input.exempt);
   const balance = invoiceTotal - input.payment;
 
   const supabase = await createClient();
 
-  // Phase 3: client_id / sales_rep. When a job order is linked, both
-  // values are re-derived server-side from that order's own row
-  // rather than trusted from the client — client_id because the
-  // browser's copy of job_orders could be stale (another tab/session
-  // relinked the order's client in between), and sales_rep because it
-  // must be null whenever job_order_no is set regardless of what the
-  // form sent (sales_rep_only_when_unlinked enforces this at the DB
-  // level too — this is defense in depth, not the only gate).
-  let clientId = input.clientId;
-  let salesRep = input.salesRep;
-  if (input.jobOrderNo) {
-    const { data: order, error: orderLookupError } = await supabase
-      .from("job_orders")
-      .select("client_id")
-      .eq("job_order_no", input.jobOrderNo)
-      .single();
-    if (orderLookupError || !order) {
-      return { error: orderLookupError?.message ?? "Linked job order not found." };
-    }
-    clientId = order.client_id;
-    salesRep = null;
-  }
+  const resolved = await resolveClientAndSalesRep(supabase, input.jobOrderNo, input.clientId, input.salesRep);
+  if (resolved.error) return { error: resolved.error };
 
   const { error } = await supabase.from("job_invoices").insert({
     job_order_no: input.jobOrderNo || null,
     date: input.date,
     customer_name: input.customerName.trim() || null,
-    client_id: clientId,
-    sales_rep: salesRep,
+    client_id: resolved.clientId,
+    sales_rep: resolved.salesRep,
     product_description: input.productDescription.trim() || null,
     revenue_category: input.revenueCategory,
     business_unit: input.businessUnit,
@@ -147,6 +182,88 @@ export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionRe
     status: input.status,
     oracle_no: input.oracleNo.trim() || null,
   });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/revenue-analysis/invoice-entry");
+  revalidatePath("/revenue-analysis");
+  return {};
+}
+
+// Same field set as RecordInvoiceInput minus `payment` — editing never
+// touches payment/balance/receipt_no, which stay exclusively under
+// Record Payment's control (confirmed decision). balance is still
+// RECOMPUTED here (see below) because it's a derived value like
+// invoice_total, not something typed — but payment itself is never
+// read from this input at all.
+export type UpdateInvoiceInput = Omit<RecordInvoiceInput, "payment">;
+
+// Edit capability: date, customer_name, product_description,
+// revenue_category, business_unit, quantity, unit_price, oracle_no,
+// status, job_order_no (re-linking), client_id, sales_rep — reusing
+// validateInvoiceFields/computeInvoiceAmounts/resolveClientAndSalesRep
+// exactly as recordInvoice does above, not a forked copy.
+//
+// payment is never read from `input` and is never written here —
+// Record Payment (recordInvoicePayment) remains the only place that
+// changes it. balance IS written, but as a recomputed value: the real
+// current payment is re-fetched fresh (never trusted from the client,
+// same discipline as recordInvoicePayment's own re-fetch), and
+// balance = new invoice_total - that real current payment. This is the
+// actual mechanics behind the UI's warning — if quantity/unit_price
+// change on an invoice that already has payment > 0, the stored
+// balance moves to match the new total while the payment itself stays
+// exactly what it was, which is precisely the "may make the payment
+// inconsistent with the new total" the warning names.
+export async function updateInvoice(id: number, input: UpdateInvoiceInput): Promise<ActionResult> {
+  const user = await requireInvoiceEntryAccess();
+
+  const fieldError = validateInvoiceFields(input);
+  if (fieldError) return { error: fieldError };
+
+  const { amount, nhil, vat, invoiceTotal } = computeInvoiceAmounts(input.quantity, input.unitPrice, input.exempt);
+
+  const supabase = await createClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("job_invoices")
+    .select("payment")
+    .eq("id", id)
+    .single();
+  if (fetchError || !current) {
+    return { error: fetchError?.message ?? "Invoice not found." };
+  }
+  const balance = invoiceTotal - current.payment;
+
+  const resolved = await resolveClientAndSalesRep(supabase, input.jobOrderNo, input.clientId, input.salesRep);
+  if (resolved.error) return { error: resolved.error };
+
+  const { error } = await supabase
+    .from("job_invoices")
+    .update({
+      job_order_no: input.jobOrderNo || null,
+      date: input.date,
+      customer_name: input.customerName.trim() || null,
+      client_id: resolved.clientId,
+      sales_rep: resolved.salesRep,
+      product_description: input.productDescription.trim() || null,
+      revenue_category: input.revenueCategory,
+      business_unit: input.businessUnit,
+      quantity: input.quantity,
+      unit_price: input.unitPrice,
+      amount,
+      nhil,
+      vat,
+      invoice_total: invoiceTotal,
+      balance,
+      status: input.status,
+      oracle_no: input.oracleNo.trim() || null,
+      edited_by: user.email,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", id);
 
   if (error) {
     return { error: error.message };
