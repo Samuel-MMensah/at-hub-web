@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { groupByMonth, currentMonthKey, type MonthGroup } from "@/lib/month-groups";
 import { createClient } from "@/lib/supabase/client";
-import type { InvoiceRow } from "../invoice-entry/invoice-entry-client";
+import type { InvoiceRow, JobOrderOption } from "../invoice-entry/invoice-entry-client";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 const CURRENCY = "GH₵";
@@ -30,6 +30,7 @@ const REPORT_COLUMNS = [
   "Category",
   "Product",
   "Business Unit",
+  "Sales Rep",
   "Qty",
   "Amount (excl. tax)",
   "Amount (incl. tax)",
@@ -68,6 +69,19 @@ function csvEscape(value: string): string {
   return value;
 }
 
+// sales_rep is only stored directly on job_invoices for an UNLINKED
+// entry (job_order_no IS NULL) — the sales_rep_only_when_unlinked CHECK
+// constraint guarantees it's always null on a LINKED one, where the
+// real salesperson lives on the linked job_orders row instead. Never
+// just job_invoices.sales_rep on its own: that would read blank for
+// every linked invoice even though a real salesperson exists.
+function effectiveSalesRep(invoice: InvoiceRow, jobOrderSalesRepByNo: Map<string, string | null>): string {
+  if (invoice.job_order_no) {
+    return jobOrderSalesRepByNo.get(invoice.job_order_no) ?? "";
+  }
+  return invoice.sales_rep ?? "";
+}
+
 // Same downloadCsv shape as Audit Log/My Sales Dashboard/Revenue
 // Analysis — duplicated locally per this codebase's established
 // per-file convention, not a shared import.
@@ -88,7 +102,7 @@ function downloadCsv(filenamePrefix: string, columns: string[], rows: string[][]
 }
 
 // Blank for an unlinked invoice — never the literal "null"/"None".
-function rowToCsv(r: InvoiceRow): string[] {
+function rowToCsv(r: InvoiceRow, jobOrderSalesRepByNo: Map<string, string | null>): string[] {
   return [
     r.date,
     r.job_order_no ?? "",
@@ -96,6 +110,7 @@ function rowToCsv(r: InvoiceRow): string[] {
     r.revenue_category,
     r.product_description ?? "",
     r.business_unit,
+    effectiveSalesRep(r, jobOrderSalesRepByNo),
     String(r.quantity),
     r.amount.toFixed(2),
     r.invoice_total.toFixed(2),
@@ -224,13 +239,27 @@ function CategoryReportPdfButton({
   );
 }
 
-export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
+export function CategoryReportClient({
+  invoices,
+  jobOrders,
+}: {
+  invoices: InvoiceRow[];
+  jobOrders: JobOrderOption[];
+}) {
   const [categories, setCategories] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [dateError, setDateError] = useState<string | null>(null);
   const [generated, setGenerated] = useState(false);
   const [reportRows, setReportRows] = useState<InvoiceRow[]>([]);
+
+  // O(1) lookup for effectiveSalesRep()'s join-through on linked
+  // invoices — built once per jobOrders change, not per row.
+  const jobOrderSalesRepByNo = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const o of jobOrders) map.set(o.job_order_no, o.sales_rep);
+    return map;
+  }, [jobOrders]);
 
   const canGenerate = fromDate !== "" && toDate !== "" && categories.length > 0;
 
@@ -274,7 +303,7 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
     downloadCsv(
       `ATP_category_report_${categoryLabel(categories).replace(/[^a-z0-9]+/gi, "_")}`,
       REPORT_COLUMNS,
-      reportRows.map(rowToCsv)
+      reportRows.map((r) => rowToCsv(r, jobOrderSalesRepByNo))
     );
   }
 
@@ -410,6 +439,9 @@ export function CategoryReportClient({ invoices }: { invoices: InvoiceRow[] }) {
                             {r.product_description ?? ""}
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">{r.business_unit}</td>
+                          <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">
+                            {effectiveSalesRep(r, jobOrderSalesRepByNo) || "—"}
+                          </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">
                             {r.quantity.toLocaleString()}
                           </td>

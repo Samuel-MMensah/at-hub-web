@@ -135,7 +135,7 @@ def category_report_pdf(payload: CategoryReportRequest, user=Depends(require_use
         supabase.table("job_invoices")
         .select(
             "date, job_order_no, customer_name, revenue_category, product_description, "
-            "business_unit, quantity, amount, invoice_total, payment, balance"
+            "business_unit, quantity, amount, invoice_total, payment, balance, sales_rep"
         )
         .gte("date", payload.from_date)
         .lte("date", payload.to_date)
@@ -145,6 +145,33 @@ def category_report_pdf(payload: CategoryReportRequest, user=Depends(require_use
         .data
         or []
     )
+
+    # sales_rep is only stored directly on job_invoices for an UNLINKED
+    # entry (job_order_no IS NULL) — the sales_rep_only_when_unlinked
+    # CHECK constraint guarantees it's always null on a LINKED one,
+    # where the real salesperson lives on the linked job_orders row
+    # instead. Re-queried here (never trusting the client) for exactly
+    # the order numbers this report's own rows reference, same "DB
+    # truth, not caller-supplied data" posture as the rest of this
+    # endpoint. Each row is then overwritten in place with its real
+    # effective sales_rep, so generate_category_report_pdf can just
+    # read row["sales_rep"] without knowing anything about the join.
+    linked_order_nos = sorted({r["job_order_no"] for r in rows if r.get("job_order_no")})
+    sales_rep_by_order_no: dict[str, str | None] = {}
+    if linked_order_nos:
+        order_rows = (
+            supabase.table("job_orders")
+            .select("job_order_no, sales_rep")
+            .in_("job_order_no", linked_order_nos)
+            .execute()
+            .data
+            or []
+        )
+        sales_rep_by_order_no = {o["job_order_no"]: o.get("sales_rep") for o in order_rows}
+
+    for row in rows:
+        job_order_no = row.get("job_order_no")
+        row["sales_rep"] = sales_rep_by_order_no.get(job_order_no) if job_order_no else row.get("sales_rep")
 
     # Same equivalence the frontend's own label/filename use — all 7
     # selected reads and files identically to the old "All Categories".

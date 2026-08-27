@@ -3,7 +3,7 @@ import { TopBar } from "@/components/shell/topbar";
 import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, FINANCE_ROLES, hasRole } from "@/lib/nav-config";
-import { getInvoiceHistory } from "../invoice-entry/page";
+import { getInvoiceHistory, getJobOrderOptions } from "../invoice-entry/page";
 import { CategoryReportClient } from "./category-report-client";
 
 // Standalone route, same pattern as Revenue Analysis / Invoice Entry
@@ -14,11 +14,16 @@ import { CategoryReportClient } from "./category-report-client";
 // invoice_total, ...), and Dispatch's tabbed page already fetches it
 // once for Invoice Entry's own history table — the same array is
 // reused for this tab too, not refetched.
+// getJobOrderOptions() reused the same way — Dispatch's tabbed page
+// already fetches it for Invoice Entry's own order picker, and it now
+// carries job_orders.sales_rep, which the Sales Rep column joins
+// through to for LINKED invoices (job_invoices.sales_rep is always
+// null in that case — see effectiveSalesRep() in category-report-client.tsx).
 export default async function CategoryReportPage() {
   const user = await requireUser();
   const allowed = hasRole(user.role, [...ADMIN_ROLES, ...FINANCE_ROLES]);
 
-  const invoices = allowed ? await getInvoiceHistory() : [];
+  const [invoices, jobOrders] = allowed ? await Promise.all([getInvoiceHistory(), getJobOrderOptions()]) : [[], []];
 
   return (
     <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
@@ -32,7 +37,7 @@ export default async function CategoryReportPage() {
       {!allowed ? (
         <RestrictedAccess message="Category Report is reserved for finance staff and administrators." />
       ) : (
-        <CategoryReportClient invoices={invoices} />
+        <CategoryReportClient invoices={invoices} jobOrders={jobOrders} />
       )}
     </AppShell>
   );
