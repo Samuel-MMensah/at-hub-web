@@ -18,7 +18,7 @@ async function getMyJobOrders(salesRepName: string): Promise<SalesJobOrderRow[]>
   const supabase = await createClient();
   const { data } = await supabase
     .from("job_orders")
-    .select("id, job_order_no, client_id")
+    .select("id, job_order_no, client_id, order_date")
     .eq("sales_rep", salesRepName);
   return (data ?? []) as SalesJobOrderRow[];
 }

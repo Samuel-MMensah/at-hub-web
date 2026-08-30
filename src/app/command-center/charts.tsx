@@ -28,6 +28,7 @@ import {
   type OrderCategory,
 } from "@/lib/order-category";
 import { DonutChart } from "@/components/ui/donut-chart";
+import { Button } from "@/components/ui/button";
 
 const CURRENCY = "GH₵";
 
@@ -425,6 +426,10 @@ export interface DeptPerformanceRow extends GarmentClassifiable {
   job_order_no: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
+  // "Date raised" — a plain Postgres DATE ("YYYY-MM-DD"), same format
+  // <input type="date"> produces, so the range filter below is a
+  // straight string comparison, no timezone conversion involved.
+  order_date: string | null;
 }
 
 // Same two colors already established on Command Center's own KPI
@@ -630,9 +635,31 @@ type DeptView = "Department" | "By Category";
 // between the department (2-way) and category (6-way) views of the SAME rows.
 export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceRow[] }) {
   const [view, setView] = useState<DeptView>("Department");
-  const deptStats = useMemo(() => groupDepartmentPerformance(rows), [rows]);
-  const category = useMemo(() => groupCategoryBreakdown(rows), [rows]);
+  // All-time by default (both empty) — same convention as Category
+  // Report's own From/To pickers, applied live over the rows already
+  // fetched once rather than a second round-trip per range change.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const hasRange = fromDate !== "" && toDate !== "";
+  const rangeValid = !hasRange || fromDate <= toDate;
 
+  const filteredRows = useMemo(() => {
+    if (!hasRange || !rangeValid) return rows;
+    return rows.filter((r) => r.order_date && r.order_date >= fromDate && r.order_date <= toDate);
+  }, [rows, hasRange, rangeValid, fromDate, toDate]);
+
+  const deptStats = useMemo(() => groupDepartmentPerformance(filteredRows), [filteredRows]);
+  const category = useMemo(() => groupCategoryBreakdown(filteredRows), [filteredRows]);
+
+  function clearRange() {
+    setFromDate("");
+    setToDate("");
+  }
+
+  // Gated on the UNFILTERED rows — a rep with zero orders ever should
+  // still see nothing here, but a real dataset that happens to have zero
+  // rows in the currently-picked range should show the "no orders match"
+  // message below instead of this section vanishing entirely.
   if (rows.length === 0) return null;
 
   return (
@@ -651,24 +678,64 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
         </InfoPopover>
       </div>
 
-      <div className="mb-4 flex gap-2">
-        {(["Department", "By Category"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setView(option)}
-            className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
-              view === option
-                ? "border-at-navy bg-at-navy text-at-white"
-                : "border-at-border bg-at-white text-at-slate hover:border-at-accent"
-            }`}
-          >
-            {option}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="flex gap-2">
+          {(["Department", "By Category"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setView(option)}
+              className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
+                view === option
+                  ? "border-at-navy bg-at-navy text-at-white"
+                  : "border-at-border bg-at-white text-at-slate hover:border-at-accent"
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+            From (Date Raised)
+          </label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+            To (Date Raised)
+          </label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          />
+        </div>
+        {hasRange && (
+          <Button variant="secondary" size="sm" onClick={clearRange}>
+            Clear
+          </Button>
+        )}
       </div>
 
-      {view === "Department" ? (
+      {hasRange && !rangeValid && (
+        <div className="mb-3 text-sm font-semibold text-red-600">
+          From Date must be on or before To Date — showing all-time until fixed.
+        </div>
+      )}
+
+      {filteredRows.length === 0 ? (
+        <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
+          No orders match this date range.
+        </div>
+      ) : view === "Department" ? (
         <DepartmentView stats={deptStats} />
       ) : (
         <CategoryView stats={category.stats} uncategorized={category.uncategorized} />

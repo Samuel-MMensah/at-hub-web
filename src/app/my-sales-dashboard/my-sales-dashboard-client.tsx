@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
@@ -11,6 +11,7 @@ export interface SalesJobOrderRow {
   id: number;
   job_order_no: string;
   client_id: number | null;
+  order_date: string | null;
 }
 
 export interface SalesInvoiceRow {
@@ -135,25 +136,53 @@ export function MySalesDashboardClient({
   jobOrders: SalesJobOrderRow[];
   invoices: SalesInvoiceRow[];
 }) {
+  // All-time by default (both empty) — same "no filter until a range is
+  // explicitly chosen" convention as Category Report's From/To pickers.
+  // Applied live (no separate Generate step) since this is just an
+  // in-memory filter over data already fetched once.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const hasRange = fromDate !== "" && toDate !== "";
+  const rangeValid = !hasRange || fromDate <= toDate;
+
+  const filteredInvoices = useMemo(() => {
+    if (!hasRange || !rangeValid) return invoices;
+    return invoices.filter((i) => i.date >= fromDate && i.date <= toDate);
+  }, [invoices, hasRange, rangeValid, fromDate, toDate]);
+
+  // job_orders' own date (order_date, "date raised") is a distinct field
+  // from invoices' date — a job order can be raised in one month and
+  // invoiced in another, so this is filtered independently rather than
+  // reusing the invoice date range's row set.
+  const filteredJobOrders = useMemo(() => {
+    if (!hasRange || !rangeValid) return jobOrders;
+    return jobOrders.filter((o) => o.order_date && o.order_date >= fromDate && o.order_date <= toDate);
+  }, [jobOrders, hasRange, rangeValid, fromDate, toDate]);
+
+  function clearRange() {
+    setFromDate("");
+    setToDate("");
+  }
+
   // Deduped by id already, once, in page.tsx (an unlinked and a linked
   // match are mutually exclusive per the sales_rep_only_when_unlinked
   // CHECK constraint anyway — no real overlap expected, but the dedupe
   // there is the actual safety net, not this component).
-  const totalRevenue = useMemo(() => invoices.reduce((sum, i) => sum + i.invoice_total, 0), [invoices]);
-  const totalCollected = useMemo(() => invoices.reduce((sum, i) => sum + i.payment, 0), [invoices]);
-  const totalOutstanding = useMemo(() => invoices.reduce((sum, i) => sum + i.balance, 0), [invoices]);
-  const totalJobsRaised = jobOrders.length;
+  const totalRevenue = useMemo(() => filteredInvoices.reduce((sum, i) => sum + i.invoice_total, 0), [filteredInvoices]);
+  const totalCollected = useMemo(() => filteredInvoices.reduce((sum, i) => sum + i.payment, 0), [filteredInvoices]);
+  const totalOutstanding = useMemo(() => filteredInvoices.reduce((sum, i) => sum + i.balance, 0), [filteredInvoices]);
+  const totalJobsRaised = filteredJobOrders.length;
 
   // How many of THIS rep's own job_orders belong to a given client —
   // feeds the breakdown table's "Jobs" column. Keyed by client_id
   // (null included as its own bucket, for orders with no client link).
   const jobCountByClient = useMemo(() => {
     const map = new Map<number | null, number>();
-    for (const o of jobOrders) {
+    for (const o of filteredJobOrders) {
       map.set(o.client_id, (map.get(o.client_id) ?? 0) + 1);
     }
     return map;
-  }, [jobOrders]);
+  }, [filteredJobOrders]);
 
   // One row per DISTINCT client this rep has REVENUE against — built
   // from invoices, not from job_orders, so a client the rep has raised
@@ -164,7 +193,7 @@ export function MySalesDashboardClient({
   // this table's totals always reconcile with the summary cards above.
   const clientBreakdown: ClientBreakdownRow[] = useMemo(() => {
     const map = new Map<number | null, ClientBreakdownRow>();
-    for (const inv of invoices) {
+    for (const inv of filteredInvoices) {
       const key = inv.client_id;
       let row = map.get(key);
       if (!row) {
@@ -184,13 +213,16 @@ export function MySalesDashboardClient({
     }
     // Actionable-first: who owes the most, per explicit instruction.
     return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding);
-  }, [invoices, jobCountByClient]);
+  }, [filteredInvoices, jobCountByClient]);
 
   // Most-recent-first, both for display and so the activity CSV export
-  // reflects the same order as what's on screen.
+  // reflects the same order as what's on screen. Recent Activity is
+  // filtered by the same range as the summary cards/breakdown above it —
+  // otherwise a filtered "Total Revenue" sitting above an unfiltered
+  // activity list would misleadingly look like it doesn't add up.
   const sortedInvoices = useMemo(
-    () => [...invoices].sort((a, b) => b.date.localeCompare(a.date)),
-    [invoices]
+    () => [...filteredInvoices].sort((a, b) => b.date.localeCompare(a.date)),
+    [filteredInvoices]
   );
 
   const monthGroups: MonthGroup<SalesInvoiceRow>[] = useMemo(
@@ -219,6 +251,48 @@ export function MySalesDashboardClient({
 
   return (
     <div>
+      <div className="mb-4 rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              From Date
+            </label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              To Date
+            </label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </div>
+          {hasRange && (
+            <Button variant="secondary" onClick={clearRange}>
+              Clear
+            </Button>
+          )}
+          <div className="text-sm text-at-slate">
+            {hasRange && rangeValid
+              ? `Showing ${fromDate} to ${toDate} — invoices by invoice date, jobs by date raised.`
+              : "Showing all-time (no date range applied)."}
+          </div>
+        </div>
+        {hasRange && !rangeValid && (
+          <div className="mt-2 text-sm font-semibold text-red-600">
+            From Date must be on or before To Date — showing all-time until fixed.
+          </div>
+        )}
+      </div>
+
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard label="Total Revenue" value={money(totalRevenue)} />
         <SummaryCard label="Total Collected" value={money(totalCollected)} valueColor="#10b981" />

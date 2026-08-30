@@ -158,7 +158,7 @@ async function getKpis() {
       .gte("created_at", trendCutoff),
     supabase
       .from("job_orders")
-      .select("job_order_no, total_amount, deposit_amount, department, type_of_print, print_type")
+      .select("job_order_no, total_amount, deposit_amount, department, type_of_print, print_type, order_date")
       .in("status", DEPT_PERFORMANCE_STATUSES),
   ]);
 
