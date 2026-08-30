@@ -226,6 +226,16 @@ function todayUtcMidnight(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+// The ONE "days overdue" calculation in this file — AR Aging and
+// Delinquent Customers below both call this rather than each rolling
+// their own, so the two can never quietly drift apart on what "overdue"
+// means. (today - invoice date) in whole days, UTC-based, same
+// convention as every other date computation in this app.
+function daysOverdueFrom(dateStr: string, today: Date): number {
+  const invoiceDate = parseDateOnly(dateStr);
+  return Math.floor((today.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 // Drill-down row shape — the exact invoice-level detail that sums to
 // a bucket's `value`, produced in the SAME pass as that sum below
 // (never a second, separately-filtered query) so the two can't drift.
@@ -255,8 +265,7 @@ function buildAgingData(invoices: InvoiceRow[]): AgingBucket[] {
 
   for (const inv of invoices) {
     if (inv.balance <= 0) continue;
-    const invoiceDate = parseDateOnly(inv.date);
-    const daysOverdue = Math.floor((today.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysOverdue = daysOverdueFrom(inv.date, today);
     const bucketIndex = daysOverdue <= 30 ? 0 : daysOverdue <= 60 ? 1 : daysOverdue <= 90 ? 2 : 3;
     const bucket = buckets[bucketIndex];
     bucket.value += inv.balance;
@@ -301,6 +310,56 @@ function buildAgingTakeaway(buckets: AgingBucket[]): string {
   return `${currentPct}% of outstanding revenue is current (0-30 days); ${overduePct}% is 31+ days overdue.`;
 }
 
+// Same "no data" convention as My Sales Dashboard's "— No Client
+// Linked —" row — a null customer_name still gets summed into its own
+// explicit bucket rather than silently dropped, so this list's total
+// always reconciles with AR Aging's own grand total above.
+const NO_CUSTOMER_NAME = "— No Customer Name —";
+
+interface DelinquentCustomerRow {
+  customerName: string;
+  totalOutstanding: number;
+  oldestOverdueDate: string;
+  daysOverdue: number;
+  invoiceCount: number;
+}
+
+// Groups job_invoices by customer_name where balance > 0 — only rows
+// AR Aging itself would also bucket (a fully-paid invoice has nothing
+// to age, so it has nothing to contribute here either). daysOverdue
+// reuses daysOverdueFrom() against each customer's OLDEST unpaid
+// invoice, not a fresh per-customer formula — the same calculation AR
+// Aging uses, just applied to the earliest date in the group instead
+// of every row individually.
+function buildDelinquentCustomers(invoices: InvoiceRow[], today: Date): DelinquentCustomerRow[] {
+  const map = new Map<string, { totalOutstanding: number; oldestDate: string; invoiceCount: number }>();
+
+  for (const inv of invoices) {
+    if (inv.balance <= 0) continue;
+    const key = inv.customer_name ?? NO_CUSTOMER_NAME;
+    let row = map.get(key);
+    if (!row) {
+      row = { totalOutstanding: 0, oldestDate: inv.date, invoiceCount: 0 };
+      map.set(key, row);
+    }
+    row.totalOutstanding += inv.balance;
+    row.invoiceCount += 1;
+    if (inv.date < row.oldestDate) row.oldestDate = inv.date;
+  }
+
+  // Biggest real risk first — explicit instruction, not this app's
+  // usual "most-recent-first" default.
+  return Array.from(map.entries())
+    .map(([customerName, r]) => ({
+      customerName,
+      totalOutstanding: r.totalOutstanding,
+      oldestOverdueDate: r.oldestDate,
+      daysOverdue: daysOverdueFrom(r.oldestDate, today),
+      invoiceCount: r.invoiceCount,
+    }))
+    .sort((a, b) => b.totalOutstanding - a.totalOutstanding);
+}
+
 function csvEscape(value: string): string {
   if (/[",\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
@@ -330,6 +389,114 @@ const DRILLDOWN_COLUMNS = ["Customer", "Invoice Date", "Days Overdue", "Balance"
 
 function agingRowToCsv(row: AgingRow): string[] {
   return [row.customerName ?? "", row.date, String(row.daysOverdue), row.balance.toFixed(2)];
+}
+
+const DELINQUENT_COLUMNS = [
+  "Customer",
+  "Total Outstanding",
+  "Oldest Overdue Invoice Date",
+  "Days Overdue",
+  "Invoice Count",
+];
+
+function delinquentRowToCsv(row: DelinquentCustomerRow): string[] {
+  return [
+    row.customerName,
+    row.totalOutstanding.toFixed(2),
+    row.oldestOverdueDate,
+    String(row.daysOverdue),
+    String(row.invoiceCount),
+  ];
+}
+
+// Same table-card shape as AR Aging's drilldown modal table (permanent
+// caption above the table, TOTAL footer row) — not a new visual
+// pattern. Ranked by amount at risk, biggest first, per explicit
+// instruction.
+function DelinquentCustomersSection({ rows }: { rows: DelinquentCustomerRow[] }) {
+  const totalOutstanding = rows.reduce((sum, r) => sum + r.totalOutstanding, 0);
+  const totalInvoiceCount = rows.reduce((sum, r) => sum + r.invoiceCount, 0);
+
+  function exportCsv() {
+    downloadCsv("ATP_delinquent_customers", DELINQUENT_COLUMNS, rows.map(delinquentRowToCsv));
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-base font-bold text-at-navy">Delinquent Customers</div>
+        {rows.length > 0 && (
+          <Button variant="secondary" size="sm" onClick={exportCsv}>
+            ⬇️ Download CSV
+          </Button>
+        )}
+      </div>
+      {/* MANDATORY, permanent caption — not a tooltip. Same limitation
+          AR Aging above already discloses about itself, worded for this
+          table's own "oldest overdue invoice" framing rather than
+          repeated verbatim. */}
+      <div className="mb-3 text-xs text-at-slate">
+        Aged by each customer&apos;s oldest overdue invoice date — does not reflect partial
+        payments made against older invoices, since payment timing isn&apos;t separately tracked.
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
+          No outstanding balances — every invoice is fully paid.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-at-border bg-at-bg">
+                <th className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Customer
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Total Outstanding
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Oldest Overdue Invoice Date
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Days Overdue
+                </th>
+                <th className="whitespace-nowrap px-4 py-2.5 text-right text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Invoice Count
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.customerName} className="border-b border-at-border last:border-0 hover:bg-at-bg">
+                  <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-at-navy">{row.customerName}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right font-bold" style={{ color: "#ef4444" }}>
+                    {money(row.totalOutstanding)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{row.oldestOverdueDate}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">{row.daysOverdue}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">{row.invoiceCount}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-at-navy bg-at-bg">
+                <td className="whitespace-nowrap px-4 py-2.5 font-extrabold text-at-navy">TOTAL</td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right font-extrabold text-at-navy">
+                  {money(totalOutstanding)}
+                </td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">—</td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">—</td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right font-extrabold text-at-navy">
+                  {totalInvoiceCount}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Read-only detail view, not a destructive confirmation — same
@@ -597,7 +764,19 @@ export function RevenueAnalysisClient({ invoices }: { invoices: InvoiceRow[] }) 
   const table = useMemo(() => buildTable(invoices, period), [invoices, period]);
   const businessUnitData = useMemo(() => buildBusinessUnitData(invoices), [invoices]);
   const collectionsData = useMemo(() => buildCollectionsData(invoices), [invoices]);
+  // Stable for the life of this mount — AR Aging and Delinquent
+  // Customers both age against the SAME "today" rather than each
+  // computing (and potentially drifting on) their own.
+  const today = useMemo(() => todayUtcMidnight(), []);
   const agingData = useMemo(() => buildAgingData(invoices), [invoices]);
+  const delinquentCustomers = useMemo(() => buildDelinquentCustomers(invoices, today), [invoices, today]);
+
+  // Derived from the SAME collectionsData Collections vs Outstanding
+  // already renders — not a new query, not a re-scan of `invoices`.
+  const collected = collectionsData.find((d) => d.name === "Collected")?.value ?? 0;
+  const outstanding = collectionsData.find((d) => d.name === "Outstanding")?.value ?? 0;
+  const totalInvoiced = collected + outstanding;
+  const collectionRatePct = totalInvoiced > 0 ? (collected / totalInvoiced) * 100 : null;
 
   return (
     <div>
@@ -606,18 +785,43 @@ export function RevenueAnalysisClient({ invoices }: { invoices: InvoiceRow[] }) 
           (unlike the Revenue Trend chart and table below, which share
           the Weekly/Monthly toggle). */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <DonutChart
-          title="Business Unit Breakdown"
-          data={businessUnitData}
-          formatValue={money}
-          caption="All invoices, all-time — not filtered by the Weekly/Monthly toggle below."
-        />
-        <DonutChart
-          title="Collections vs Outstanding"
-          data={collectionsData}
-          formatValue={money}
-          caption="All invoices, all-time — not filtered by the Weekly/Monthly toggle below."
-        />
+        <div>
+          <DonutChart title="Business Unit Breakdown" data={businessUnitData} formatValue={money} />
+          {/* MANDATORY, permanent caption — not a tooltip. Plain sibling
+              element, same convention as every other caption in this
+              sweep (Weekly/Monthly trend, Category Report, Uninvoiced
+              Orders) — not a prop on the shared DonutChart component,
+              which other pages (Command Center) also use. */}
+          <div className="mt-1 text-xs text-at-slate">
+            All invoices, all-time — not filtered by the Weekly/Monthly toggle below.
+          </div>
+        </div>
+        <div className="flex flex-col gap-4">
+          <div>
+            <DonutChart title="Collections vs Outstanding" data={collectionsData} formatValue={money} />
+            {/* MANDATORY, permanent caption — not a tooltip. Same sibling
+                convention as above. */}
+            <div className="mt-1 text-xs text-at-slate">
+              All invoices, all-time — not filtered by the Weekly/Monthly toggle below.
+            </div>
+          </div>
+          {/* Collection Rate — a derived view of the SAME collectionsData
+              above, not a new query. Placed directly beneath its source
+              donut so it reads as "the one number that summarizes the
+              chart right above it," not a buried, disconnected stat. */}
+          <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
+            <div className="text-xs font-bold uppercase tracking-wide text-at-slate">Collection Rate</div>
+            <div className="mt-1 text-xs text-at-slate">
+              All invoices, all-time — not filtered by the Weekly/Monthly toggle below.
+            </div>
+            <div className="mt-2 text-4xl font-extrabold text-at-navy">
+              {collectionRatePct === null ? "—" : `${collectionRatePct.toFixed(1)}%`}
+            </div>
+            <div className="mt-1 text-xs text-at-slate">
+              {money(collected)} collected of {money(totalInvoiced)} invoiced
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* AR Aging — also company-wide, also not period-filtered; a
@@ -626,6 +830,8 @@ export function RevenueAnalysisClient({ invoices }: { invoices: InvoiceRow[] }) 
       <div className="mb-6">
         <AgingChart data={agingData} />
       </div>
+
+      <DelinquentCustomersSection rows={delinquentCustomers} />
 
       {/* MANDATORY, permanent caption — not a tooltip. Same convention as
           AR Aging above. */}
