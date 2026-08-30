@@ -108,9 +108,26 @@ export interface TrendOrderRow {
   job_order_no: string | null;
   total_amount: number | null;
   deposit_amount: number | null;
+  status: string | null;
 }
 
 type TrendPeriod = "Weekly" | "Monthly";
+
+// Same 5-status "Approved-and-beyond" set as page.tsx's own
+// DEPT_PERFORMANCE_STATUSES — duplicated here rather than imported,
+// matching this codebase's established per-file constant convention.
+// Note: a Rejected order falls into REJECTED_STATUS below; a
+// Pending Approval / Pending Revision Approval order matches neither
+// bucket, so its revenue doesn't appear in either bar (only its job
+// still counts toward "Jobs Raised", which is unconditional on status).
+const APPROVED_PLUS_STATUSES = new Set([
+  "Approved",
+  "In Production",
+  "At Warehouse",
+  "Ready for Collection",
+  "Delivered",
+]);
+const REJECTED_STATUS = "Rejected";
 
 function monthStart(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -129,7 +146,13 @@ function groupTrend(rows: TrendOrderRow[], period: TrendPeriod) {
 
   const buckets = new Map<
     string,
-    { period: Date; jobOrderNos: Set<string>; revenue: number; collections: number }
+    {
+      period: Date;
+      jobOrderNos: Set<string>;
+      revenueApprovedPlus: number;
+      revenueRejected: number;
+      collections: number;
+    }
   >();
 
   for (const row of rows) {
@@ -142,11 +165,19 @@ function groupTrend(rows: TrendOrderRow[], period: TrendPeriod) {
 
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { period: bucketDate, jobOrderNos: new Set(), revenue: 0, collections: 0 };
+      bucket = { period: bucketDate, jobOrderNos: new Set(), revenueApprovedPlus: 0, revenueRejected: 0, collections: 0 };
       buckets.set(key, bucket);
     }
     if (row.job_order_no) bucket.jobOrderNos.add(row.job_order_no);
-    bucket.revenue += Number(row.total_amount ?? 0);
+    // Revenue split: Approved+ and Rejected are the only two buckets a
+    // row's total_amount can land in — a Pending Approval/Pending
+    // Revision Approval row matches neither, per APPROVED_PLUS_STATUSES'
+    // own doc comment above.
+    if (APPROVED_PLUS_STATUSES.has(row.status ?? "")) {
+      bucket.revenueApprovedPlus += Number(row.total_amount ?? 0);
+    } else if (row.status === REJECTED_STATUS) {
+      bucket.revenueRejected += Number(row.total_amount ?? 0);
+    }
     bucket.collections += Number(row.deposit_amount ?? 0);
   }
 
@@ -155,7 +186,8 @@ function groupTrend(rows: TrendOrderRow[], period: TrendPeriod) {
     .map((b) => ({
       label: formatPeriodLabel(b.period, period),
       jobs: b.jobOrderNos.size,
-      revenue: b.revenue,
+      revenueApprovedPlus: b.revenueApprovedPlus,
+      revenueRejected: b.revenueRejected,
       collections: b.collections,
     }));
 }
@@ -167,19 +199,18 @@ export function TrendCharts({ rows }: { rows: TrendOrderRow[] }) {
 
   return (
     <div>
-      <SectionHeader>Trend — Jobs, Revenue &amp; Collections</SectionHeader>
-
-      {/* MANDATORY, permanent caption — not a tooltip. Flipped from a
-          popover per explicit instruction: this is one of the two
-          captions on this page that explains a large, potentially
-          confusing gap against Departmental Performance below, so it
-          needs to be visible without a click. */}
-      <div className="mb-3 text-xs text-at-slate">
-        Includes every order raised in this window, regardless of status — Rejected orders are
-        counted here too. This is why this figure can be higher than Departmental Performance
-        below, which only counts Approved-and-beyond orders — the gap is made up of Rejected and
-        still-Pending-Approval orders. Fixed to the last 180 days (Weekly) or 365 days (Monthly);
-        there&apos;s no way to pick a different date range yet.
+      <div className="mb-3 mt-8 flex items-center gap-2">
+        <span className="text-lg font-bold text-at-navy-soft">Trend — Jobs, Revenue &amp; Collections</span>
+        {/* Converted from a permanent caption to a popover: Rejected now
+            has its own visible series below, so the chart no longer
+            needs a paragraph explaining an otherwise-invisible
+            inflation — only the fixed-window fact still needs stating. */}
+        <InfoPopover>
+          <p>
+            Revenue splits into Approved+ and Rejected, shown as separate bars. Fixed to the last
+            180 days (Weekly) or 365 days (Monthly); no custom date range yet.
+          </p>
+        </InfoPopover>
       </div>
 
       <div className="mb-4 flex gap-2">
@@ -224,7 +255,27 @@ export function TrendCharts({ rows }: { rows: TrendOrderRow[] }) {
                   iconSize={8}
                   wrapperStyle={{ fontSize: 12, color: "#64748b" }}
                 />
-                <Bar dataKey="revenue" name="Revenue" fill="#0369a1" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                {/* Stacked (same stackId) so the two segments together
+                    reproduce the original single Revenue bar's height —
+                    Collections stays a separate, non-stacked bar next to
+                    it, unchanged. Rejected's red matches this app's one
+                    existing "Rejected" color convention (My Order
+                    Tracker / Search status colors), not a new pick. */}
+                <Bar
+                  dataKey="revenueApprovedPlus"
+                  name="Revenue (Approved+)"
+                  stackId="revenue"
+                  fill="#0369a1"
+                  maxBarSize={28}
+                />
+                <Bar
+                  dataKey="revenueRejected"
+                  name="Rejected"
+                  stackId="revenue"
+                  fill="#ef4444"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={28}
+                />
                 <Bar dataKey="collections" name="Collections" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
@@ -339,9 +390,8 @@ export function CapacityCharts({ jobs }: { jobs: CapacityJobRow[] }) {
             </span>
             <InfoPopover>
               <p>
-                This comes from the jobs table (shop-floor production scheduling) — it is not
-                order or invoice revenue. It&apos;s also scoped to jobs finishing within the last
-                72 hours or not yet finished, not all jobs company-wide.
+                Shop-floor jobs table, not order or invoice revenue — scoped to jobs finishing in
+                the last 72 hours or still unfinished, not all jobs company-wide.
               </p>
             </InfoPopover>
           </div>
@@ -415,10 +465,7 @@ export function OrderIntakeChart({ orders }: { orders: IntakeOrderRow[] }) {
       <div className="mb-3 mt-8 flex items-center gap-2">
         <span className="text-lg font-bold text-at-navy-soft">Order Intake Trend — Daily Contract Value</span>
         <InfoPopover>
-          <p>
-            Same Approved/In Production/At Warehouse orders as the KPI cards above, plotted by the
-            day each was raised — not a company-wide, all-status view.
-          </p>
+          <p>Same Approved/In Production/At Warehouse orders as the KPI cards above, by day raised.</p>
         </InfoPopover>
       </div>
       <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
@@ -520,7 +567,7 @@ function groupDepartmentPerformance(rows: DeptPerformanceRow[]): DeptStats[] {
 // intentional, not a bug.
 // (i) affordance next to the section heading — surfaces the scope caveats on
 // hover or click instead of as permanent page text.
-function InfoPopover({ children }: { children: React.ReactNode }) {
+export function InfoPopover({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <span
@@ -698,10 +745,9 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
         <span className="text-lg font-bold text-at-navy-soft">Departmental Performance</span>
         <InfoPopover>
           <p className="mb-2">
-            Includes all approved-and-beyond orders, including completed/delivered ones — figures
-            will differ from the Active Orders totals above, which exclude completed orders. This
-            is why this figure can be lower than the Trend chart above, which also counts Rejected
-            and still-Pending orders.
+            Includes all approved-and-beyond orders, including completed/delivered ones — differs
+            from Active Orders above (which excludes completed orders) and can be lower than the
+            Trend chart above (which also includes Rejected).
           </p>
           <p>
             &ldquo;Commercial Press&rdquo; is a display label for orders stored as

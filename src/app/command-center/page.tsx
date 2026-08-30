@@ -9,6 +9,7 @@ import {
   CapacityCharts,
   OrderIntakeChart,
   DepartmentalPerformanceCharts,
+  InfoPopover,
   type TrendOrderRow,
   type CapacityJobRow,
   type DeptPerformanceRow,
@@ -154,7 +155,7 @@ async function getKpis() {
       .or(`finish_time.gte.${jobsWindowStart},finish_time.is.null`),
     supabase
       .from("job_orders")
-      .select("created_at, job_order_no, total_amount, deposit_amount")
+      .select("created_at, job_order_no, total_amount, deposit_amount, status")
       .gte("created_at", trendCutoff),
     supabase
       .from("job_orders")
@@ -221,7 +222,16 @@ export default async function CommandCenterPage() {
         subtitle="Secured Capacity Planning Engine"
       />
 
-      <div className="mb-2 text-lg font-bold text-at-navy-soft">Command Center</div>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-lg font-bold text-at-navy-soft">Command Center</span>
+        <InfoPopover>
+          <p>
+            Counts only Approved, In Production, and At Warehouse orders — completed/delivered
+            orders are excluded, which is why these totals are smaller than Departmental
+            Performance below.
+          </p>
+        </InfoPopover>
+      </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <MetricCard label="Active Orders (All)" value={activeOrders} />
@@ -251,20 +261,6 @@ export default async function CommandCenterPage() {
           label="Total Contract Value"
           value={`${CURRENCY}${contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
         />
-      </div>
-
-      {/* MANDATORY, permanent caption — not a tooltip. Same convention as
-          Revenue Analysis's AR Aging caption: this explains why these
-          KPIs read dramatically lower than Departmental Performance
-          further down the SAME page, so it needs to be visible to
-          someone confused by that gap, not something they have to
-          already suspect exists and go looking for. */}
-      <div className="mt-3 text-xs text-at-slate">
-        These KPI cards (Active Orders, Contract Value, Press Orders, Garment Orders, Deposits
-        Collected, Outstanding Receivables, Total Contract Value) only count orders with status
-        Approved, In Production, or At Warehouse. Completed and delivered orders are excluded —
-        that&apos;s why these totals are smaller than Departmental Performance further down the
-        page, which includes completed orders too.
       </div>
 
       <TrendCharts rows={trendRows} />
