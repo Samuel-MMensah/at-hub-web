@@ -5,10 +5,13 @@ import { Button } from "@/components/ui/button";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { submitBatch, resubmitOrder as resubmitOrderAction } from "./actions";
 import type { SalesRepOption } from "@/lib/sales-reps";
+import { SALES_REP_WALK_IN } from "@/lib/sales-rep-constants";
 
 const CURRENCY = "GH₵";
 
-const SALES_REP_SENTINEL = "— None / Walk-in —";
+// Unselected placeholder value — never a valid submission; the user
+// must actively pick either a real rep or SALES_REP_WALK_IN below.
+const SALES_REP_PLACEHOLDER = "— Select Sales Rep —";
 
 // Matches f"PG-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{random.randint(1000,9999)}"
 // (Press) / the "GPG-" equivalent (Garment) exactly. Generated
@@ -85,7 +88,10 @@ interface AttachmentsTermsState {
   sampleAttached: "No" | "Yes";
   sampleWith: string;
   is30Day: boolean;
-  salesRep: string; // "" represents the "— None / Walk-in —" sentinel
+  // "" means "not yet chosen" — an invalid, unsubmittable state now that
+  // Sales Rep is required. SALES_REP_WALK_IN is the real, deliberate
+  // "no rep involved" value; anything else is a real rep's full_name.
+  salesRep: string;
   termsNotes: string;
 }
 
@@ -165,13 +171,15 @@ function AttachmentsAndTermsSection({
           />
           30-Day Credit Terms job
         </label>
-        <FormField label="Sales / Marketing Rep (who brought this job)">
+        <FormField label="Sales / Marketing Rep (who brought this job) *">
           <select
             value={state.salesRep}
             onChange={(e) => setState((s) => ({ ...s, salesRep: e.target.value }))}
+            required
             className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
           >
-            <option value="">{SALES_REP_SENTINEL}</option>
+            <option value="" disabled>{SALES_REP_PLACEHOLDER}</option>
+            <option value={SALES_REP_WALK_IN}>{SALES_REP_WALK_IN}</option>
             {salesReps.map((r) => (
               <option key={r.full_name} value={r.full_name}>
                 {r.full_name}
@@ -921,6 +929,10 @@ function PressCart({
     }
     if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
       setSubmitError("Sample is marked attached — enter who has it before submitting.");
+      return;
+    }
+    if (!attachments.salesRep) {
+      setSubmitError(`Select a Sales Rep before submitting — choose "${SALES_REP_WALK_IN}" if no rep was involved.`);
       return;
     }
     // Client-side convenience copy of the same case-insensitive check
@@ -1733,6 +1745,10 @@ function GarmentCart({
     }
     if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
       setSubmitError("Sample is marked attached — enter who has it before submitting.");
+      return;
+    }
+    if (!attachments.salesRep) {
+      setSubmitError(`Select a Sales Rep before submitting — choose "${SALES_REP_WALK_IN}" if no rep was involved.`);
       return;
     }
     // Client-side convenience copy of the same case-insensitive check

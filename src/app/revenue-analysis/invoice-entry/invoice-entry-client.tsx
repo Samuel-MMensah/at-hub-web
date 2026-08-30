@@ -6,6 +6,7 @@ import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 import { recordInvoice, recordInvoicePayment, updateInvoice } from "./actions";
 import type { SalesRepOption } from "@/lib/sales-reps";
+import { SALES_REP_WALK_IN } from "@/lib/sales-rep-constants";
 
 const CURRENCY = "GH₵";
 
@@ -443,6 +444,14 @@ function InvoiceForm({
     if (!canSubmit || typeof quantity !== "number" || typeof unitPrice !== "number") {
       return;
     }
+    // Required going forward only (2026-08-30 revenue audit): a brand-new
+    // standalone invoice must pick a rep; editing an existing invoice, or
+    // one linked to a job order (attribution comes from the order), is
+    // untouched.
+    if (!isEditing && !selectedOrderNo && !salesRep) {
+      setError(`Select a Sales Rep before submitting — choose "${SALES_REP_WALK_IN}" if no rep was involved.`);
+      return;
+    }
     setError(null);
     setSuccess(null);
     startTransition(async () => {
@@ -587,14 +596,18 @@ function InvoiceForm({
           )}
 
           <label className="mb-1 mt-3 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-            Sales / Marketing Rep (who brought this job)
+            Sales / Marketing Rep (who brought this job){!isEditing ? " *" : ""}
           </label>
           <select
             value={salesRep}
             onChange={(e) => setSalesRep(e.target.value)}
+            required={!isEditing}
             className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
           >
-            <option value="">— None / Walk-in —</option>
+            <option value="" disabled={!isEditing}>
+              {isEditing ? "— None / Walk-in —" : "— Select Sales Rep —"}
+            </option>
+            <option value={SALES_REP_WALK_IN}>{SALES_REP_WALK_IN}</option>
             {salesReps.map((r) => (
               <option key={r.full_name} value={r.full_name}>
                 {r.full_name}

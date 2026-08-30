@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 
+// Re-exported so callers that only need the constant (client components,
+// in particular) don't have to import this file — this file pulls in
+// next/headers via createClient, which breaks the client bundle. See
+// sales-rep-constants.ts for the actual definition.
+export { SALES_REP_WALK_IN } from "@/lib/sales-rep-constants";
+
 // Shared by Raise Job Order's cart forms (job_orders.sales_rep) and
 // Invoice Entry's standalone-invoice form (job_invoices.sales_rep) —
 // same "shared, not duplicated" convention as isGarment/

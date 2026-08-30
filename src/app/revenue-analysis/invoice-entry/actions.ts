@@ -153,6 +153,14 @@ export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionRe
   if (!Number.isFinite(input.payment) || input.payment < 0) {
     return { error: "Payment cannot be negative." };
   }
+  // Required going forward only (2026-08-30 revenue audit), and only for
+  // a standalone entry — re-checked here since the client-side guard is
+  // only a convenience; updateInvoice deliberately has no equivalent
+  // check, so editing a pre-existing invoice is never retroactively
+  // blocked by this.
+  if (!input.jobOrderNo && !input.salesRep) {
+    return { error: 'Select a Sales Rep before submitting — choose "Walk-in / No Sales Rep" if no rep was involved.' };
+  }
 
   const { amount, nhil, vat, invoiceTotal } = computeInvoiceAmounts(input.quantity, input.unitPrice, input.exempt);
   const balance = invoiceTotal - input.payment;

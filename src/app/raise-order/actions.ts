@@ -152,6 +152,12 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
   if (sampleAttached === "Yes" && !sampleWith) {
     return { error: "Sample is marked attached — enter who has it before submitting." };
   }
+  // Required going forward only (2026-08-30 revenue audit) — re-checked
+  // here since the client-side guard in raise-order-client.tsx is only a
+  // convenience, this is the real boundary.
+  if (!salesRep) {
+    return { error: 'Select a Sales Rep before submitting — choose "Walk-in / No Sales Rep" if no rep was involved.' };
+  }
   // Phase 3: client_id is required either way — for an existing
   // selection it must come straight from the picker (never re-derived
   // from a name match), for "New Client" it's resolved below once that
@@ -286,7 +292,9 @@ export async function submitBatch(formData: FormData): Promise<ActionResult> {
       lpo_file_url: lpoResult.url,
       sample_file_url: sampleResult.url,
       payment_terms: paymentTerms,
-      sales_rep: salesRep || null,
+      // Guaranteed non-empty by the check above — either a real rep's
+      // full_name or the literal "Walk-in / No Sales Rep" value.
+      sales_rep: salesRep,
       // Sample / No Charge safety net — re-enforced here, not trusted
       // from the cart form alone: an is_sample item must have
       // total_amount and deposit_amount at exactly 0, forced
