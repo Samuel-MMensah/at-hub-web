@@ -253,6 +253,20 @@ export default async function CommandCenterPage() {
         />
       </div>
 
+      {/* MANDATORY, permanent caption — not a tooltip. Same convention as
+          Revenue Analysis's AR Aging caption: this explains why these
+          KPIs read dramatically lower than Departmental Performance
+          further down the SAME page, so it needs to be visible to
+          someone confused by that gap, not something they have to
+          already suspect exists and go looking for. */}
+      <div className="mt-3 text-xs text-at-slate">
+        These KPI cards (Active Orders, Contract Value, Press Orders, Garment Orders, Deposits
+        Collected, Outstanding Receivables, Total Contract Value) only count orders with status
+        Approved, In Production, or At Warehouse. Completed and delivered orders are excluded —
+        that&apos;s why these totals are smaller than Departmental Performance further down the
+        page, which includes completed orders too.
+      </div>
+
       <TrendCharts rows={trendRows} />
       <CapacityCharts jobs={jobs} />
       <OrderIntakeChart orders={orders} />

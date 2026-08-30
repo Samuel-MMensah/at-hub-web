@@ -30,8 +30,14 @@ export default async function CategoryReportPage() {
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
       <div className="mb-1 text-lg font-bold text-at-navy-soft">Category Report</div>
-      <div className="mb-4 text-sm text-at-slate">
+      <div className="mb-1 text-sm text-at-slate">
         Filter invoices by category and date range, then export as CSV or PDF.
+      </div>
+      {/* MANDATORY, permanent caption — not a tooltip. Same convention as
+          Revenue Analysis's AR Aging caption. */}
+      <div className="mb-4 text-xs text-at-slate">
+        Filters by category and date only — an invoice&apos;s own status (DELIVERED, IN
+        PRODUCTION, or blank) is never used to include or exclude rows here.
       </div>
 
       {!allowed ? (

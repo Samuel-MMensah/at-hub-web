@@ -48,9 +48,12 @@ export default async function UninvoicedOrdersPage() {
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
       <div className="mb-1 text-lg font-bold text-at-navy-soft">Uninvoiced Orders</div>
-      <div className="mb-4 text-sm text-at-slate">
+      <div className="mb-1 text-sm text-at-slate">
         Approved-or-beyond orders that have never been invoiced — click an order number to create its invoice.
       </div>
+      {/* MANDATORY, permanent caption — not a tooltip. Same convention as
+          Revenue Analysis's AR Aging caption. */}
+      <div className="mb-4 text-xs text-at-slate">All-time — there&apos;s no date filter on this list.</div>
 
       {!allowed ? (
         <RestrictedAccess message="Uninvoiced Orders is reserved for finance staff and administrators." />

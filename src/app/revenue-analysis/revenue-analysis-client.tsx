@@ -606,8 +606,18 @@ export function RevenueAnalysisClient({ invoices }: { invoices: InvoiceRow[] }) 
           (unlike the Revenue Trend chart and table below, which share
           the Weekly/Monthly toggle). */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <DonutChart title="Business Unit Breakdown" data={businessUnitData} formatValue={money} />
-        <DonutChart title="Collections vs Outstanding" data={collectionsData} formatValue={money} />
+        <DonutChart
+          title="Business Unit Breakdown"
+          data={businessUnitData}
+          formatValue={money}
+          caption="All invoices, all-time — not filtered by the Weekly/Monthly toggle below."
+        />
+        <DonutChart
+          title="Collections vs Outstanding"
+          data={collectionsData}
+          formatValue={money}
+          caption="All invoices, all-time — not filtered by the Weekly/Monthly toggle below."
+        />
       </div>
 
       {/* AR Aging — also company-wide, also not period-filtered; a
@@ -615,6 +625,13 @@ export function RevenueAnalysisClient({ invoices }: { invoices: InvoiceRow[] }) 
           historical trend. */}
       <div className="mb-6">
         <AgingChart data={agingData} />
+      </div>
+
+      {/* MANDATORY, permanent caption — not a tooltip. Same convention as
+          AR Aging above. */}
+      <div className="mb-3 text-xs text-at-slate">
+        Includes every invoice in the selected range, regardless of status — DELIVERED, IN
+        PRODUCTION, or blank.
       </div>
 
       {/* Same pill-toggle pattern as Command Center's Trend chart

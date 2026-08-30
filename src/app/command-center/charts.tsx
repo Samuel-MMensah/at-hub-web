@@ -169,6 +169,17 @@ export function TrendCharts({ rows }: { rows: TrendOrderRow[] }) {
     <div>
       <SectionHeader>Trend — Jobs, Revenue &amp; Collections</SectionHeader>
 
+      {/* MANDATORY, permanent caption — not a tooltip. Flipped from a
+          popover per explicit instruction: this is one of the two
+          captions on this page that explains a large, potentially
+          confusing gap against Departmental Performance below, so it
+          needs to be visible without a click. */}
+      <div className="mb-3 text-xs text-at-slate">
+        Includes every order raised in this window, regardless of status — Rejected orders are
+        counted here too. Fixed to the last 180 days (Weekly) or 365 days (Monthly); there&apos;s
+        no way to pick a different date range yet.
+      </div>
+
       <div className="mb-4 flex gap-2">
         {(["Weekly", "Monthly"] as const).map((option) => (
           <button
@@ -320,8 +331,17 @@ export function CapacityCharts({ jobs }: { jobs: CapacityJobRow[] }) {
         </div>
 
         <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
-          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-slate">
-            Revenue by Job
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-at-slate">
+              Revenue by Job
+            </span>
+            <InfoPopover>
+              <p>
+                This comes from the jobs table (shop-floor production scheduling) — it is not
+                order or invoice revenue. It&apos;s also scoped to jobs finishing within the last
+                72 hours or not yet finished, not all jobs company-wide.
+              </p>
+            </InfoPopover>
           </div>
           <ResponsiveContainer width="100%" height={280}>
             <PieChart>
@@ -390,7 +410,15 @@ export function OrderIntakeChart({ orders }: { orders: IntakeOrderRow[] }) {
 
   return (
     <div>
-      <SectionHeader>Order Intake Trend — Daily Contract Value</SectionHeader>
+      <div className="mb-3 mt-8 flex items-center gap-2">
+        <span className="text-lg font-bold text-at-navy-soft">Order Intake Trend — Daily Contract Value</span>
+        <InfoPopover>
+          <p>
+            Same Approved/In Production/At Warehouse orders as the KPI cards above, plotted by the
+            day each was raised — not a company-wide, all-status view.
+          </p>
+        </InfoPopover>
+      </div>
       <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
         <ResponsiveContainer width="100%" height={260}>
           <AreaChart data={daily}>

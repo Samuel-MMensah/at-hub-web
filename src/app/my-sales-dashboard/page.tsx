@@ -77,7 +77,25 @@ export default async function MySalesDashboardPage() {
       {!user.isSalesRep ? (
         <RestrictedAccess message="My Sales Dashboard is reserved for accounts flagged as sales reps." />
       ) : (
-        <MySalesDashboardClient repName={user.fullName} jobOrders={jobOrders} invoices={invoices} />
+        <>
+          {/* MANDATORY, permanent, high-visibility caption — the most
+              consequential one in this sweep (2026-08-30 revenue audit):
+              a rep seeing a low number here with no explanation could
+              reasonably think their own performance is being
+              under-reported, when the real cause is a data-completeness
+              gap that predates this field being required. Same amber
+              callout-box style already used elsewhere for a "don't miss
+              this" caveat (CategoryView's uncategorized-orders warning,
+              command-center/charts.tsx) — not a new visual convention. */}
+          <div className="mb-4 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
+            This only counts orders and invoices with your name recorded as Sales Rep. Sales Rep
+            became a required field on 2026-08-30 — before that date, many orders and invoices
+            were never tagged with any rep, so real work you brought in earlier may not appear
+            here. A low total isn&apos;t necessarily a performance issue; it may just mean older
+            records were never attributed to anyone.
+          </div>
+          <MySalesDashboardClient repName={user.fullName} jobOrders={jobOrders} invoices={invoices} />
+        </>
       )}
     </AppShell>
   );
