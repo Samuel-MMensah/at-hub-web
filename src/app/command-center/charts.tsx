@@ -176,8 +176,10 @@ export function TrendCharts({ rows }: { rows: TrendOrderRow[] }) {
           needs to be visible without a click. */}
       <div className="mb-3 text-xs text-at-slate">
         Includes every order raised in this window, regardless of status — Rejected orders are
-        counted here too. Fixed to the last 180 days (Weekly) or 365 days (Monthly); there&apos;s
-        no way to pick a different date range yet.
+        counted here too. This is why this figure can be higher than Departmental Performance
+        below, which only counts Approved-and-beyond orders — the gap is made up of Rejected and
+        still-Pending-Approval orders. Fixed to the last 180 days (Weekly) or 365 days (Monthly);
+        there&apos;s no way to pick a different date range yet.
       </div>
 
       <div className="mb-4 flex gap-2">
@@ -697,7 +699,9 @@ export function DepartmentalPerformanceCharts({ rows }: { rows: DeptPerformanceR
         <InfoPopover>
           <p className="mb-2">
             Includes all approved-and-beyond orders, including completed/delivered ones — figures
-            will differ from the Active Orders totals above, which exclude completed orders.
+            will differ from the Active Orders totals above, which exclude completed orders. This
+            is why this figure can be lower than the Trend chart above, which also counts Rejected
+            and still-Pending orders.
           </p>
           <p>
             &ldquo;Commercial Press&rdquo; is a display label for orders stored as
