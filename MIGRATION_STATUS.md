@@ -1703,8 +1703,8 @@ investigated and **deliberately deferred**, not forgotten:
   of truth. The existing files there are a one-time back-capture of all
   DDL applied before this rule existed (see `supabase/migrations/README.md`);
   from now on the folder must not fall behind the database again.
-- **Before any commit, run all three: `tsc --noEmit`, `eslint`, and
-  `npm run build` — a real production build, not just the first two.**
+- **Before any commit, still run `tsc --noEmit` and `eslint` by hand —
+  but `npm run build` itself is no longer a manual step to remember.**
   A Vercel deploy broke (Uninvoiced Orders' `ARCHIVE_STATUSES` import)
   even though `tsc`/`eslint` were run and passed clean beforehand: both
   ran against the local working tree, which already had the fix
@@ -1712,10 +1712,22 @@ investigated and **deliberately deferred**, not forgotten:
   commit that shipped left that file's change out, so the pushed `HEAD`
   Vercel actually built from was still broken. `tsc`/`eslint` checking
   the working tree is not the same guarantee as `npm run build`
-  succeeding against what's actually about to be committed and pushed;
-  from now on `npm run build` completing with zero errors is a required
-  step before every commit, not an optional extra check after something
-  breaks in production.
+  succeeding against what's actually about to be pushed — and a second,
+  separate production build failure after this rule was first written
+  (never a landed hook, just a restated manual instruction) confirmed
+  that "remember to run it" doesn't hold up on its own.
+  **Now enforced by a Husky pre-push hook (`.husky/pre-push`, running
+  `npm run build`), wired via package.json's `prepare` script so it
+  reinstalls automatically on every fresh clone/`npm install` — not a
+  local-only `.git/hooks` file that silently vanishes on re-clone.**
+  Verified for real on 2026-08-30, not just assumed to work: a
+  deliberately broken commit (an import of a non-existent named export,
+  the same class of bug as `ARCHIVE_STATUSES`/`jobOrders`) was pushed —
+  `npm run build` failed inside the hook and `git push` was rejected
+  before anything reached GitHub; the breakage was then removed and a
+  clean push of the same branch went through normally. A broken build
+  can still reach GitHub only via `git push --no-verify`, which is why
+  that flag is never used to route around a real failure.
 
 ## Implemented design decision — Die Cutter to Folder Gluer scheduling
 
