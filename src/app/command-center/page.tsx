@@ -4,6 +4,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import { getInvoicePaymentSumsByOrderNo, withEffectiveDeposits } from "@/lib/effective-deposit";
 import {
   TrendCharts,
   CapacityCharts,
@@ -53,6 +54,14 @@ interface OrderRow extends GarmentClassifiable {
   deposit_amount: number | null;
   created_at: string | null;
   date_of_collection: string | null;
+  // Added for the KPI redesign's WIP tile (2026-08-31) — needs to isolate
+  // In Production rows from the rest of the already-fetched Active
+  // population, not a second query.
+  status: string | null;
+}
+
+function money(n: number): string {
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Ports app.py's C8a overdue-collection-alert trigger, scoped to the
@@ -142,7 +151,7 @@ async function getKpis() {
     supabase
       .from("job_orders")
       .select(
-        "id, job_order_no, total_amount, deposit_amount, department, type_of_print, print_type, created_at, date_of_collection"
+        "id, job_order_no, total_amount, deposit_amount, department, type_of_print, print_type, created_at, date_of_collection, status"
       )
       .in("status", ACTIVE_ORDER_STATUSES),
     supabase
@@ -163,25 +172,61 @@ async function getKpis() {
       .in("status", DEPT_PERFORMANCE_STATUSES),
   ]);
 
-  const orders = (ordersRes.data ?? []) as OrderRow[];
+  // Deposit-sync fix, Phase 1 (2026-08-31): for a linked order,
+  // deposit_amount here is replaced with the real SUM of its linked
+  // invoice(s)' payment — computed once, applied to all three queries
+  // above, so every KPI/chart on this page reads the same corrected
+  // figure rather than the stale, independently-drifting column value.
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+
+  const orders = withEffectiveDeposits((ordersRes.data ?? []) as OrderRow[], invoicePaymentSums);
   const jobs = (jobsRes.data ?? []) as JobRow[];
-  const trendRows = (trendRes.data ?? []) as TrendOrderRow[];
-  const deptPerformanceRows = (deptPerformanceRes.data ?? []) as DeptPerformanceRow[];
+  const trendRows = withEffectiveDeposits(
+    (trendRes.data ?? []) as TrendOrderRow[],
+    invoicePaymentSums
+  );
+  const deptPerformanceRows = withEffectiveDeposits(
+    (deptPerformanceRes.data ?? []) as DeptPerformanceRow[],
+    invoicePaymentSums
+  );
 
   await triggerOverdueCollectionAlerts(supabase, orders);
 
-  const contractValue = orders.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
-  const depositCollected = orders.reduce((sum, row) => sum + Number(row.deposit_amount ?? 0), 0);
+  // KPI redesign (2026-08-31) — confirmed definitions:
+  //
+  // Active Orders / WIP value come from `orders` (the existing
+  // ACTIVE_ORDER_STATUSES/3-status fetch) — unchanged scope for Active,
+  // WIP is a filter of that SAME already-fetched set down to In
+  // Production only, not a second query.
+  const wipOrders = orders.filter((row) => row.status === "In Production");
+  const activeOrdersValue = orders.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+  const wipValue = wipOrders.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+
+  // Total Revenue / Collections / Outstanding all come from
+  // `deptPerformanceRows` — the SAME Approved-and-beyond (5-status)
+  // population Departmental Performance itself uses, already carrying
+  // the Phase 1 effective-deposit correction. No new query, no second
+  // calculation: Collections is exactly deptPerformanceRows' own
+  // (already-corrected) deposit_amount, summed — the identical
+  // mechanism that already correctly combines an order-time deposit
+  // with a later Invoice Entry payment for a linked order. Outstanding
+  // is derived from these same two sums, not queried separately, so it
+  // can never disagree with Total Revenue - Collections by so much as
+  // a rounding unit.
+  const totalRevenue = deptPerformanceRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+  const collections = deptPerformanceRows.reduce((sum, row) => sum + Number(row.deposit_amount ?? 0), 0);
+  const outstanding = totalRevenue - collections;
 
   return {
-    activeOrders: nunique(orders.map((row) => row.job_order_no)),
-    contractValue,
+    activeOrdersCount: nunique(orders.map((row) => row.job_order_no)),
+    activeOrdersValue,
+    wipCount: nunique(wipOrders.map((row) => row.job_order_no)),
+    wipValue,
+    totalRevenue,
+    collections,
+    outstanding,
     pressOrders: nunique(orders.filter((row) => !isGarment(row)).map((row) => row.job_order_no)),
     garmentOrders: nunique(orders.filter(isGarment).map((row) => row.job_order_no)),
-    bookRunsQueue: nunique(jobs.filter((job) => job.ups === 1).map((job) => job.tracking_id)),
-    packagingSkillets: nunique(jobs.filter((job) => job.ups > 1).map((job) => job.tracking_id)),
-    depositCollected,
-    outstandingBalance: contractValue - depositCollected,
     pendingApprovals: pendingRes.count ?? 0,
     orders,
     jobs: jobs as CapacityJobRow[],
@@ -194,14 +239,15 @@ export default async function CommandCenterPage() {
   const user = await requireUser();
 
   const {
-    activeOrders,
-    contractValue,
+    activeOrdersCount,
+    activeOrdersValue,
+    wipCount,
+    wipValue,
+    totalRevenue,
+    collections,
+    outstanding,
     pressOrders,
     garmentOrders,
-    bookRunsQueue,
-    packagingSkillets,
-    depositCollected,
-    outstandingBalance,
     pendingApprovals,
     orders,
     jobs,
@@ -222,45 +268,91 @@ export default async function CommandCenterPage() {
         subtitle="Secured Capacity Planning Engine"
       />
 
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-lg font-bold text-at-navy-soft">Command Center</span>
-        <InfoPopover>
-          <p>
-            Counts only Approved, In Production, and At Warehouse orders — completed/delivered
-            orders are excluded, which is why these totals are smaller than Departmental
-            Performance below.
-          </p>
-        </InfoPopover>
-      </div>
+      <div className="mb-2 text-lg font-bold text-at-navy-soft">Command Center</div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="Active Orders (All)" value={activeOrders} />
+      {/* Total Revenue — the visual anchor of the KPI section, full-width
+          and deliberately larger than the row below it. */}
+      <div className="grid grid-cols-1">
         <MetricCard
-          label="Contract Value"
-          value={`${CURRENCY}${contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-          valueClassName="text-[1.35rem]"
+          label={
+            <>
+              Total Revenue
+              <InfoPopover>
+                <p>All Approved-and-beyond orders, including completed/delivered ones.</p>
+              </InfoPopover>
+            </>
+          }
+          value={money(totalRevenue)}
+          valueClassName="text-[2.75rem]"
         />
-        <MetricCard label="Press Orders" value={pressOrders} accentColor="#0369a1" />
-        <MetricCard label="Garment Orders" value={garmentOrders} accentColor="#d97706" />
-        <MetricCard label="Book Runs Queue" value={bookRunsQueue} />
-        <MetricCard label="Packaging Skillets" value={packagingSkillets} />
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard
-          label="Deposits Collected"
-          value={`${CURRENCY}${depositCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+          label={
+            <>
+              Active Orders
+              <InfoPopover>
+                <p>
+                  Counts only Approved, In Production, and At Warehouse orders — completed/
+                  delivered orders are excluded, which is why this total is smaller than
+                  Departmental Performance below.
+                </p>
+              </InfoPopover>
+            </>
+          }
+          value={activeOrdersCount}
+          subValue={money(activeOrdersValue)}
+        />
+        <MetricCard
+          label={
+            <>
+              WIP
+              <InfoPopover>
+                <p>
+                  Orders currently In Production only — does not include Approved (not yet
+                  started) or At Warehouse (production finished).
+                </p>
+              </InfoPopover>
+            </>
+          }
+          value={wipCount}
+          subValue={money(wipValue)}
+          accentColor="#0369a1"
+        />
+        <MetricCard
+          label={
+            <>
+              Collections
+              <InfoPopover>
+                <p>
+                  Includes deposits recorded at order-raise time AND payments recorded later
+                  through Invoice Entry for linked invoices — combined correctly, not
+                  double-counted.
+                </p>
+              </InfoPopover>
+            </>
+          }
+          value={money(collections)}
           accentColor="#10b981"
         />
         <MetricCard
-          label="Outstanding Receivables"
-          value={`${CURRENCY}${outstandingBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+          label={
+            <>
+              Outstanding Receivables
+              <InfoPopover>
+                <p>Total Revenue minus Collections.</p>
+              </InfoPopover>
+            </>
+          }
+          value={money(outstanding)}
           accentColor="#ef4444"
         />
-        <MetricCard
-          label="Total Contract Value"
-          value={`${CURRENCY}${contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <MetricCard label="Press Orders" value={pressOrders} accentColor="#0369a1" />
+        <MetricCard label="Garment Orders" value={garmentOrders} accentColor="#d97706" />
       </div>
 
       <TrendCharts rows={trendRows} />

@@ -1,8 +1,18 @@
 import { cn } from "@/lib/utils";
 
 interface MetricCardProps {
-  label: string;
+  // React.ReactNode, not just string (2026-08-31, UI Conventions rule 5's
+  // same "widen rather than hand-roll a second component" precedent) — so
+  // a caller needing an inline InfoPopover next to the label doesn't need
+  // a separate metric-tile implementation. Every existing plain-string
+  // caller keeps working unchanged.
+  label: React.ReactNode;
   value: string | number;
+  // Optional secondary line rendered below the main value — for a tile
+  // that needs to show two related numbers together (e.g. Active Orders'
+  // count alongside its dollar value) rather than splitting into two
+  // separate tiles.
+  subValue?: string | number;
   accentColor?: string; // e.g. "#0369a1" — matches border-bottom-color overrides in app.py
   /** Overrides the border color independently of accentColor, for cards
    * whose app.py source uses a different shade for the border vs. the
@@ -26,7 +36,7 @@ function autoValueSize(text: string): string {
   return "text-[1rem]";
 }
 
-export function MetricCard({ label, value, accentColor, borderColor, valueClassName }: MetricCardProps) {
+export function MetricCard({ label, value, subValue, accentColor, borderColor, valueClassName }: MetricCardProps) {
   const valueText = String(value);
 
   return (
@@ -34,7 +44,7 @@ export function MetricCard({ label, value, accentColor, borderColor, valueClassN
       className="min-w-0 rounded-at-lg border border-at-border bg-at-white p-6 shadow-at-sm transition-all hover:-translate-y-0.5 hover:shadow-at-md"
       style={{ borderBottom: `4px solid ${borderColor ?? accentColor ?? "var(--at-navy)"}` }}
     >
-      <div className="min-h-[2rem] text-[0.8rem] font-bold uppercase leading-tight tracking-wide text-at-slate">
+      <div className="flex min-h-[2rem] items-center gap-1.5 text-[0.8rem] font-bold uppercase leading-tight tracking-wide text-at-slate">
         {label}
       </div>
       <div
@@ -51,6 +61,9 @@ export function MetricCard({ label, value, accentColor, borderColor, valueClassN
       >
         {value}
       </div>
+      {subValue !== undefined && (
+        <div className="mt-1 max-w-full break-words text-sm font-semibold text-at-slate">{subValue}</div>
+      )}
     </div>
   );
 }
