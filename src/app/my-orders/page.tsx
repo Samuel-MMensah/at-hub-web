@@ -4,6 +4,7 @@ import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, RAISE_ORDER_ROLES, hasRole } from "@/lib/nav-config";
+import { getInvoicePaymentSumsByOrderNo, withEffectiveDeposits } from "@/lib/effective-deposit";
 import { OrderTrackerClient, type JobOrderRow, type JobRow } from "./order-tracker-client";
 
 const PRODUCTION_STATUSES = ["In Production", "At Warehouse"];
@@ -17,7 +18,12 @@ async function getMyOrders(email: string) {
     .eq("created_by", email)
     .order("created_at", { ascending: true });
 
-  const orders = (ordersData ?? []) as JobOrderRow[];
+  const rawOrders = (ordersData ?? []) as JobOrderRow[];
+
+  // Deposit-sync fix, Phase 1 (2026-08-31): deposit_amount becomes the
+  // real SUM of linked invoice payment(s) for a linked order.
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  const orders = withEffectiveDeposits(rawOrders, invoicePaymentSums);
 
   const productionOrderNos = Array.from(
     new Set(

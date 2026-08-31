@@ -16,11 +16,18 @@ export interface DispatchOrderRow {
   customer_name: string;
   status: string | null;
   total_amount: number | null;
+  // Already the real, derived value for a linked order (page.tsx applies
+  // withEffectiveDeposits before this ever reaches the client) — never
+  // recompute or second-guess it here.
   deposit_amount: number | null;
   payment_terms: string | null;
   created_at: string | null;
   is_sample: boolean;
   sample_reason: string | null;
+  // Deposit-sync fix, Phase 1 (2026-08-31): true once this order has at
+  // least one linked invoice — gates Record Payment below, since
+  // deposit_amount is no longer directly writable for such an order.
+  hasLinkedInvoice: boolean;
 }
 
 function money(n: number): string {
@@ -150,40 +157,55 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
 
       {balance > 0 && (
         <>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <div>
-              <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Payment amount
-              </label>
-              <input
-                type="number"
-                min={0.01}
-                max={balance}
-                step={50}
-                value={payAmt}
-                onChange={(e) => setPayAmt(Number(e.target.value))}
-                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-              />
+          {order.hasLinkedInvoice ? (
+            // Deposit-sync fix, Phase 1 (2026-08-31): this order's
+            // deposit_amount is now derived from its linked invoice(s)'
+            // payment — recording a payment here would write a value
+            // that's immediately overwritten the next time anything
+            // reads this order, so the write path is disabled outright
+            // rather than silently accepted and ignored.
+            <div className="mt-4">
+              <Button disabled>Record Payment</Button>
+              <div className="mt-2 text-sm text-at-slate">
+                This order has a linked invoice — record payment through Invoice Entry instead.
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Receipt number
-              </label>
-              <input
-                type="text"
-                value={receiptNo}
-                onChange={(e) => setReceiptNo(e.target.value)}
-                placeholder="e.g. RCT-00123 — optional, recommended for the audit trail"
-                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-              />
+          ) : (
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <div>
+                <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Payment amount
+                </label>
+                <input
+                  type="number"
+                  min={0.01}
+                  max={balance}
+                  step={50}
+                  value={payAmt}
+                  onChange={(e) => setPayAmt(Number(e.target.value))}
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                  Receipt number
+                </label>
+                <input
+                  type="text"
+                  value={receiptNo}
+                  onChange={(e) => setReceiptNo(e.target.value)}
+                  placeholder="e.g. RCT-00123 — optional, recommended for the audit trail"
+                  className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                />
+              </div>
+              <Button
+                disabled={isPending || payAmt <= 0 || round2(payAmt) > round2(balance)}
+                onClick={handleRecordPayment}
+              >
+                Record Payment
+              </Button>
             </div>
-            <Button
-              disabled={isPending || payAmt <= 0 || round2(payAmt) > round2(balance)}
-              onClick={handleRecordPayment}
-            >
-              Record Payment
-            </Button>
-          </div>
+          )}
 
           <div className="mt-3 rounded-at border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-800">
             Finalize Dispatch is locked until the outstanding balance of {money(balance)} is

@@ -8,6 +8,7 @@ import { getInvoices } from "@/app/revenue-analysis/page";
 import { getJobOrderOptions, getInvoiceHistory, getClientOptions } from "@/app/revenue-analysis/invoice-entry/page";
 import { getUninvoicedOrders } from "@/app/revenue-analysis/uninvoiced-orders/page";
 import { getSalesReps } from "@/lib/sales-reps";
+import { getInvoicePaymentSumsByOrderNo, hasLinkedInvoice, withEffectiveDeposits } from "@/lib/effective-deposit";
 import { DispatchTabs } from "./dispatch-tabs";
 import type { DispatchOrderRow } from "./dispatch-client";
 
@@ -24,7 +25,17 @@ async function getDispatchOrders() {
     .in("status", DISPATCH_STATUSES)
     .order("created_at", { ascending: true });
 
-  return (data ?? []) as DispatchOrderRow[];
+  const rawOrders = (data ?? []) as DispatchOrderRow[];
+
+  // Deposit-sync fix, Phase 1 (2026-08-31): deposit_amount becomes the
+  // real SUM of linked invoice payment(s) for a linked order; hasLinked
+  // additionally gates the Record Payment UI below (a linked order's
+  // deposit_amount is no longer directly writable — see dispatch-client.tsx).
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  return withEffectiveDeposits(rawOrders, invoicePaymentSums).map((order) => ({
+    ...order,
+    hasLinkedInvoice: hasLinkedInvoice(order, invoicePaymentSums),
+  }));
 }
 
 export default async function DispatchPage() {

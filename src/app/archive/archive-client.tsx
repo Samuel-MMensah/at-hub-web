@@ -28,6 +28,13 @@ export interface ArchiveOrderRow extends GarmentClassifiable {
   // Raw Storage object PATH (bucket is private) — signed on demand for viewing.
   lpo_file_url: string | null;
   sample_file_url: string | null;
+  // Deposit-sync fix, Phase 1 (2026-08-31): true once this order has at
+  // least one linked invoice — gates Record Payment in
+  // OrderOperationsPanel below, since deposit_amount is no longer
+  // directly writable for such an order (already the real, derived
+  // value by the time it reaches this component — page.tsx applies
+  // withEffectiveDeposits before this ever gets here).
+  hasLinkedInvoice: boolean;
 }
 
 // Ports the edit form's category dropdown exactly (app.py:5177-5191):
@@ -347,39 +354,56 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
             <div className="text-xs text-at-slate">Outstanding Balance</div>
             <div className="text-xl font-extrabold text-red-600">{money(balance)}</div>
           </div>
-          <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Payment Amount
-              </label>
-              <input
-                type="number"
-                min={0.01}
-                max={balance}
-                step={100}
-                value={payAmt}
-                onChange={(e) => setPayAmt(Number(e.target.value))}
-                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-                Receipt Number
-              </label>
-              <input
-                type="text"
-                value={receiptNo}
-                onChange={(e) => setReceiptNo(e.target.value)}
-                placeholder="e.g. RCT-00123 — optional, recommended for the audit trail"
-                className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
-              />
-            </div>
-          </div>
-          {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
-          {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
-          <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
-            ✓ Record Payment
-          </Button>
+          {order.hasLinkedInvoice ? (
+            // Deposit-sync fix, Phase 1 (2026-08-31): this order's
+            // deposit_amount is now derived from its linked invoice(s)'
+            // payment — recording a payment here would write a value
+            // that's immediately overwritten the next time anything
+            // reads this order, so the write path is disabled outright
+            // rather than silently accepted and ignored.
+            <>
+              <Button disabled>✓ Record Payment</Button>
+              <div className="mt-2 text-sm text-at-slate">
+                This order has a linked invoice — record payment through Invoice Entry instead.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                    Payment Amount
+                  </label>
+                  <input
+                    type="number"
+                    min={0.01}
+                    max={balance}
+                    step={100}
+                    value={payAmt}
+                    onChange={(e) => setPayAmt(Number(e.target.value))}
+                    className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+                    Receipt Number
+                  </label>
+                  <input
+                    type="text"
+                    value={receiptNo}
+                    onChange={(e) => setReceiptNo(e.target.value)}
+                    placeholder="e.g. RCT-00123 — optional, recommended for the audit trail"
+                    className="w-full rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+                  />
+                </div>
+              </div>
+              {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
+              {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
+              <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
+                ✓ Record Payment
+              </Button>
+            </>
+          )}
         </div>
       ) : total > 0 ? (
         <div className="mb-5 border-t border-at-border pt-4">

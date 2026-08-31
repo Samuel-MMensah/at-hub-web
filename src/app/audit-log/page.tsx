@@ -2,6 +2,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
+import { getInvoicePaymentSumsByOrderNo, withEffectiveDeposits } from "@/lib/effective-deposit";
 import { AuditLogClient, type AuditOrderRow } from "./audit-log-client";
 
 // "Every order that isn't still a draft" — covers more statuses than
@@ -28,7 +29,12 @@ async function getAuditOrders() {
     )
     .in("status", AUDIT_LOG_STATUSES);
 
-  return (data ?? []) as AuditOrderRow[];
+  const orders = (data ?? []) as AuditOrderRow[];
+
+  // Deposit-sync fix, Phase 1 (2026-08-31): deposit_amount becomes the
+  // real SUM of linked invoice payment(s) for a linked order.
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  return withEffectiveDeposits(orders, invoicePaymentSums);
 }
 
 export default async function AuditLogPage() {

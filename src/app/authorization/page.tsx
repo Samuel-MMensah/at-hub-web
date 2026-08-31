@@ -4,6 +4,7 @@ import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, hasRole } from "@/lib/nav-config";
+import { getInvoicePaymentSumsByOrderNo, withEffectiveDeposits } from "@/lib/effective-deposit";
 import { AuthorizationClient, type PendingOrderRow } from "./authorization-client";
 
 // Matches fetch_pending_orders_cached() in app.py: deliberately NOT capped
@@ -16,7 +17,15 @@ const PENDING_STATUSES = ["Pending Approval", "Pending Revision Approval"];
 async function getPendingOrders() {
   const supabase = await createClient();
   const { data } = await supabase.from("job_orders").select("*").in("status", PENDING_STATUSES);
-  return (data ?? []) as PendingOrderRow[];
+  const orders = (data ?? []) as PendingOrderRow[];
+
+  // Deposit-sync fix, Phase 1 (2026-08-31): deposit_amount becomes the
+  // real SUM of linked invoice payment(s) for a linked order — a
+  // Pending order can already have one (Invoice Entry's order picker
+  // allows linking to an order of any status), so this isn't purely
+  // theoretical here either.
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  return withEffectiveDeposits(orders, invoicePaymentSums);
 }
 
 export default async function AuthorizationPage() {

@@ -4,6 +4,7 @@ import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, hasRole } from "@/lib/nav-config";
+import { getInvoicePaymentSumsByOrderNo, hasLinkedInvoice, withEffectiveDeposits } from "@/lib/effective-deposit";
 import { ArchiveClient, type ArchiveOrderRow } from "./archive-client";
 
 // get_archive_orders_cached (app.py:1057) — genuinely broader than
@@ -27,7 +28,17 @@ async function getArchiveOrders() {
     .order("created_at", { ascending: false })
     .limit(ARCHIVE_ROW_CAP);
 
-  return (data ?? []) as ArchiveOrderRow[];
+  const rawOrders = (data ?? []) as ArchiveOrderRow[];
+
+  // Deposit-sync fix, Phase 1 (2026-08-31): deposit_amount becomes the
+  // real SUM of linked invoice payment(s) for a linked order; hasLinked
+  // additionally gates Record Payment in OrderOperationsPanel below (a
+  // linked order's deposit_amount is no longer directly writable).
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  return withEffectiveDeposits(rawOrders, invoicePaymentSums).map((order) => ({
+    ...order,
+    hasLinkedInvoice: hasLinkedInvoice(order, invoicePaymentSums),
+  }));
 }
 
 export default async function ArchivePage() {

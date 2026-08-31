@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { sanitizeSearchTerm } from "@/lib/sanitize-search-term";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import { getInvoicePaymentSumsByOrderNo, withEffectiveDeposits } from "@/lib/effective-deposit";
 
 const CURRENCY = "GH₵";
 
@@ -64,7 +65,12 @@ async function searchOrders(term: string): Promise<SearchResultRow[]> {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  return (data ?? []) as SearchResultRow[];
+  const results = (data ?? []) as SearchResultRow[];
+
+  // Deposit-sync fix, Phase 1 (2026-08-31): deposit_amount becomes the
+  // real SUM of linked invoice payment(s) for a linked order.
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  return withEffectiveDeposits(results, invoicePaymentSums);
 }
 
 export default async function SearchPage({
