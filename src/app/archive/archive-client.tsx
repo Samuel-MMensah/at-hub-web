@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import { matchesSearch } from "@/lib/text-search";
 import { recordPayment, reviseOrder, deleteMasterOrder, reopenOrder, getAttachmentSignedUrl } from "./actions";
 
 const CURRENCY = "GH₵";
@@ -25,6 +26,9 @@ export interface ArchiveOrderRow extends GarmentClassifiable {
   qty_to_print: number | null;
   date_of_collection: string | null;
   approved_by: string | null;
+  // Blank/"—" for any order raised before Sales Rep became required
+  // (2026-08-31 audit-trail addition) — a direct column read, no join.
+  sales_rep: string | null;
   // Raw Storage object PATH (bucket is private) — signed on demand for viewing.
   lpo_file_url: string | null;
   sample_file_url: string | null;
@@ -94,6 +98,7 @@ function downloadCsv(fullLabel: string, rows: ArchiveOrderRow[]) {
     `Deposit (${CURRENCY})`,
     `Balance (${CURRENCY})`,
     "Collection",
+    "Sales Rep",
     "Auth By",
   ];
   const lines = [
@@ -110,6 +115,7 @@ function downloadCsv(fullLabel: string, rows: ArchiveOrderRow[]) {
         deposit.toFixed(2),
         balance.toFixed(2),
         order.date_of_collection ?? "",
+        order.sales_rep ?? "",
         order.approved_by ?? "",
       ]
         .map((v) => csvEscape(String(v)))
@@ -132,6 +138,7 @@ function downloadCsv(fullLabel: string, rows: ArchiveOrderRow[]) {
 
 export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
   const [activeTab, setActiveTab] = useState(0);
+  const [search, setSearch] = useState("");
 
   const byStatus = useMemo(() => {
     return STATUS_TABS.map((tab) => ({
@@ -141,6 +148,17 @@ export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
   }, [orders]);
 
   const current = byStatus[activeTab];
+
+  // Narrows WITHIN the current tab only — switching tabs re-filters the
+  // new tab's own rows against the same search text, it never searches
+  // across tabs. Reuses Audit Log's matchesSearch, not a reimplementation.
+  const filteredRows = useMemo(
+    () =>
+      current.rows.filter((order) =>
+        matchesSearch(search, [order.customer_name, order.job_order_no, order.sales_rep, order.approved_by])
+      ),
+    [current.rows, search]
+  );
 
   return (
     <div>
@@ -167,77 +185,92 @@ export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
         </div>
       ) : (
         <div>
-          <div className="mb-3 flex justify-end">
-            <Button onClick={() => downloadCsv(current.fullLabel, current.rows)}>
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Customer · Order No · Sales Rep · Auth By…"
+              className="flex-1 rounded-at border border-at-border bg-at-white px-4 py-2.5 text-sm text-at-navy outline-none focus:border-at-accent sm:max-w-sm"
+            />
+            <Button onClick={() => downloadCsv(current.fullLabel, filteredRows)} className="whitespace-nowrap">
               Export {current.fullLabel} CSV
             </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-at-border bg-at-bg">
-                  {[
-                    "Order No",
-                    "Customer",
-                    "Dept",
-                    `Total (${CURRENCY})`,
-                    `Deposit (${CURRENCY})`,
-                    `Balance (${CURRENCY})`,
-                    "Collection",
-                    "Auth By",
-                  ].map((col) => (
-                    <th
-                      key={col}
-                      className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate"
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {current.rows.map((order) => {
-                  const total = Number(order.total_amount ?? 0);
-                  const deposit = Number(order.deposit_amount ?? 0);
-                  const balance = total - deposit; // not clamped
-                  const garment = isGarment(order);
-                  return (
-                    <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        <span className="flex items-center gap-2">
-                          {order.job_order_no || "—"}
-                          {order.is_sample && (
-                            <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
-                          )}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        {order.customer_name || "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        {garment ? "GARMENT" : "PRESS"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{money(total)}</td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{money(deposit)}</td>
-                      <td
-                        className="whitespace-nowrap px-4 py-2.5 font-semibold"
-                        style={{ color: balance > 0 ? "#ef4444" : "#10b981" }}
+          {filteredRows.length === 0 ? (
+            <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
+              No &apos;{current.fullLabel}&apos; orders match your search.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-at-border bg-at-bg">
+                    {[
+                      "Order No",
+                      "Customer",
+                      "Dept",
+                      `Total (${CURRENCY})`,
+                      `Deposit (${CURRENCY})`,
+                      `Balance (${CURRENCY})`,
+                      "Collection",
+                      "Sales Rep",
+                      "Auth By",
+                    ].map((col) => (
+                      <th
+                        key={col}
+                        className="whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate"
                       >
-                        {money(balance)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        {order.date_of_collection || "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
-                        {order.approved_by || "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map((order) => {
+                    const total = Number(order.total_amount ?? 0);
+                    const deposit = Number(order.deposit_amount ?? 0);
+                    const balance = total - deposit; // not clamped
+                    const garment = isGarment(order);
+                    return (
+                      <tr key={order.id} className="border-b border-at-border last:border-0 hover:bg-at-bg">
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                          <span className="flex items-center gap-2">
+                            {order.job_order_no || "—"}
+                            {order.is_sample && (
+                              <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
+                            )}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                          {order.customer_name || "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                          {garment ? "GARMENT" : "PRESS"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{money(total)}</td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{money(deposit)}</td>
+                        <td
+                          className="whitespace-nowrap px-4 py-2.5 font-semibold"
+                          style={{ color: balance > 0 ? "#ef4444" : "#10b981" }}
+                        >
+                          {money(balance)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                          {order.date_of_collection || "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.sales_rep || "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
+                          {order.approved_by || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

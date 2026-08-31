@@ -6,6 +6,7 @@ import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
+import { matchesSearch } from "@/lib/text-search";
 
 const CURRENCY = "GH₵";
 
@@ -25,6 +26,9 @@ export interface AuditOrderRow extends GarmentClassifiable {
   deposit_amount: number | null;
   date_of_collection: string | null;
   rejection_note: string | null;
+  // Blank/"—" for any order raised before Sales Rep became required
+  // (2026-08-31 audit-trail addition) — a direct column read, no join.
+  sales_rep: string | null;
 }
 
 // First 9 columns match Archive's exact format/order (Status moved to
@@ -46,6 +50,7 @@ const COLUMNS = [
   `Deposit (${CURRENCY})`,
   `Balance (${CURRENCY})`,
   "Collection",
+  "Sales Rep",
   "Auth By",
   "Created By",
   "Order Date",
@@ -72,6 +77,7 @@ function toRow(order: AuditOrderRow): string[] {
     deposit.toFixed(2),
     balance.toFixed(2),
     order.date_of_collection ?? "",
+    order.sales_rep ?? "",
     order.approved_by ?? "",
     order.created_by ?? "",
     order.order_date ?? "",
@@ -125,16 +131,11 @@ export function AuditLogClient({ orders }: { orders: AuditOrderRow[] }) {
   }, [orders]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return orders.filter((order) => {
       if (statusFilter.length > 0 && (!order.status || !statusFilter.includes(order.status))) {
         return false;
       }
-      if (!q) return true;
-      const haystack = [order.customer_name, order.job_order_no, order.created_by, order.approved_by]
-        .map((v) => (v ?? "").toLowerCase())
-        .join(" ");
-      return haystack.includes(q);
+      return matchesSearch(search, [order.customer_name, order.job_order_no, order.created_by, order.approved_by]);
     });
   }, [orders, search, statusFilter]);
 
@@ -254,6 +255,7 @@ export function AuditLogClient({ orders }: { orders: AuditOrderRow[] }) {
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">
                         {order.date_of_collection || "—"}
                       </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.sales_rep || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.approved_by || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.created_by || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-navy">{order.order_date || "—"}</td>
