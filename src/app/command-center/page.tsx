@@ -283,18 +283,27 @@ export default async function CommandCenterPage() {
       <div className="mb-2 text-lg font-bold text-at-navy-soft">Command Center</div>
 
       {/* KPI grid (2026-08-31 restructure, replacing the grouped/labeled
-          rows) — Total Revenue is a single grid item spanning all 3 rows
-          in column 1, vertically centered; the other 6 tiles fill columns
-          2-3 in DOM order. On sm+ this relies on CSS Grid's own
-          row-major auto-placement: Total Revenue claims column 1 for all
-          3 rows first, so the 6 plain-flow items that follow it in the
-          markup are auto-packed into columns 2-3 across exactly 3 rows —
-          no explicit grid-row/grid-column needed on any of them. Below
-          sm, Total Revenue instead spans both columns of a plain 2-col
-          grid (full-width on its own row), and the same 6 items auto-flow
-          into a 2-column block underneath it. */}
+          rows; presentation pass same day) — Total Revenue is a single
+          grid item spanning all 3 rows in column 1; the other 6 tiles
+          fill columns 2-3 in DOM order. On sm+ this relies on CSS Grid's
+          own row-major auto-placement: Total Revenue claims column 1 for
+          all 3 rows first, so the 6 plain-flow items that follow it in
+          the markup are auto-packed into columns 2-3 across exactly 3
+          rows — no explicit grid-row/grid-column needed on any of them.
+          Below sm, Total Revenue instead spans both columns of a plain
+          2-col grid (full-width on its own row), and the same 6 items
+          auto-flow into a 2-column block underneath it.
+
+          The wrapper below is a plain div, not a nested grid — it relies
+          on the OUTER grid's own default `align-items: stretch` to fill
+          the full 3-row height itself, and MetricCard's `fill` prop then
+          stretches the card to match and vertically centers its content
+          as a group. (An earlier version centered a content-sized card
+          inside this space instead of stretching to fill it, which left
+          visible dead space above and below — this reads as a deliberate
+          tall hero tile instead.) */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="col-span-2 sm:col-span-1 sm:row-span-3 sm:grid sm:items-center">
+        <div className="col-span-2 sm:col-span-1 sm:row-span-3">
           <MetricCard
             label={
               <>
@@ -307,6 +316,7 @@ export default async function CommandCenterPage() {
             value={money(totalRevenue)}
             valueClassName="text-[2rem]"
             dense
+            fill
           />
         </div>
 

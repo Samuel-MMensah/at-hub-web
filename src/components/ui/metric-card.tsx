@@ -25,6 +25,14 @@ interface MetricCardProps {
    * read tile-by-tile. Defaults to false so every other existing caller
    * (e.g. My Order Tracker's KPI row) renders exactly as before. */
   dense?: boolean;
+  /** Stretches the card to fill its container's full height (instead of
+   * sizing to its own content) and vertically centers label/value/
+   * subValue as a group within that height. For a tile placed beside a
+   * taller neighbor (e.g. Command Center's Total Revenue, spanning 3
+   * rows next to 6 plain tiles) — without this, the card just sizes to
+   * its content and floats in the leftover space, reading as unfinished.
+   * Defaults to false; every other existing caller is unaffected. */
+  fill?: boolean;
 }
 
 // Shrinks proactively as the rendered value gets longer (real contract
@@ -61,6 +69,7 @@ export function MetricCard({
   borderColor,
   valueClassName,
   dense,
+  fill,
 }: MetricCardProps) {
   const valueText = String(value);
 
@@ -68,7 +77,8 @@ export function MetricCard({
     <div
       className={cn(
         "min-w-0 rounded-at-lg border border-at-border bg-at-white shadow-at-sm transition-all hover:-translate-y-0.5 hover:shadow-at-md",
-        dense ? "p-3" : "p-6"
+        dense ? "p-3" : "p-6",
+        fill && "flex h-full flex-col justify-center"
       )}
       style={{ borderBottom: `4px solid ${borderColor ?? accentColor ?? "var(--at-navy)"}` }}
     >
