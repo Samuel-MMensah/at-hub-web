@@ -1997,6 +1997,65 @@ own status is called out inline below.
    OTHER local expand/collapse `useState` turned up none outside this
    one component, confirming there's no other violation left unnamed.
 
+6. **Color → meaning map.** Formalized 2026-08-31 following a
+   professional-polish audit that flagged two suspected "color-meaning
+   collisions" — both re-checked from scratch before writing this rule,
+   and neither actually turned out to be a real problem, which is worth
+   recording so nobody re-litigates them from the same false premise:
+   - The audit claimed Production Board's green "Approved" status badge
+     collides with green's "success" meaning elsewhere. Re-checked: the
+     exact same green (`#10b981`) for "Approved" is independently
+     implemented in THREE places — My Order Tracker's `STATUS_MAP`
+     (ported directly from the original app's own `_status_map`),
+     Production Board's `statusTone`, and Search's
+     `SEARCH_STATUS_COLORS`. All three agree without ever having been
+     reconciled against each other. That's a deliberate, established
+     convention, not a collision — changing it would have broken
+     consistency with two other independently-agreeing
+     implementations, not fixed anything.
+   - The audit claimed blue is overloaded (Press department, financial
+     KPI tiles, and a plain informational notice all use it). True in
+     the abstract, but no two of these ever appear together on the same
+     screen in a way a reader could actually confuse — and rule 2's
+     `--at-info` token (added the same day) already gives the neutral
+     informational-notice case its own distinct shade (`#3b82f6`)
+     specifically so it stops competing with `--at-accent`'s Press blue
+     (`#0369a1`). No further reconciliation needed.
+
+   The actual, current meaning of each color, for future reference:
+   - **Green** (`--at-success`/`--at-success-bg`/`--at-success-text`):
+     a completed/positive value or action (Collections tile, "Fully
+     Paid", batch-confirmed banners) — AND, separately but
+     consistently, the "Approved" status-badge color specifically
+     across every status-color map in the app. Both senses coexist
+     deliberately; this is not a case that needs unifying further.
+   - **Amber** (`--at-warning`/`--at-warning-bg`/`--at-warning-text`):
+     pending action or something that needs attention before it's
+     resolved (Pending Approval, outstanding-balance notices, the
+     Revision Lifecycle notice) — plus Garment department's own
+     unrelated amber theming (badges, spec tiles), which is a
+     department color-code, not a warning, and isn't governed by this
+     rule (see rule 2's note on this same distinction).
+   - **Red** (`--at-danger`/`--at-danger-bg`/`--at-danger-text`):
+     an error, a rejection, or a hard block (Rejected status, locked
+     Finalize Dispatch, validation flags).
+   - **Blue, `--at-accent`** (`#0369a1`): the app's general accent —
+     Press department theming, links, focus rings. The oldest and most
+     overloaded token, kept as-is rather than split further; not worth
+     the churn without a concrete reader-facing problem to point at.
+   - **Blue, `--at-info`** (`#3b82f6`, added 2026-08-31): a plain
+     informational notice with no warning/danger/success valence
+     (Dispatch's 30-day-credit-terms notice, Archive's Reopen-order
+     notice) — deliberately a different shade from `--at-accent` so
+     "just FYI" and "this is Press department" never look identical.
+   - **Gray/slate**: idle, neutral, no special meaning (unfiltered
+     status badges, default text).
+
+   A page introducing a NEW colored element checks this list first;
+   if none of these meanings fit, that's a real signal a new color
+   category may be warranted — not a reason to reach for whichever
+   raw Tailwind shade looks right in the moment.
+
 ## Implemented design decision — Die Cutter to Folder Gluer scheduling
 
 Originally scoped to Production Layout Builder's scheduling engine
