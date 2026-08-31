@@ -80,6 +80,8 @@ export default async function RaiseOrderPage({
     <AppShell userName={user.fullName} userRole={user.role} role={user.role} isSalesRep={user.isSalesRep}>
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
+      <div className="mb-2 text-lg font-bold text-at-navy-soft">Raise Job Order</div>
+
       {!allowed ? (
         <RestrictedAccess message="Raise Job Order is reserved for Front Desk staff, Operations, and administrators." />
       ) : (

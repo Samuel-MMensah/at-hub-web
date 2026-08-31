@@ -104,6 +104,16 @@ function money(n: number): string {
   return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Matches Raise Job Order's and Production Layout's own local SectionHeader
+// byte-for-byte (2026-08-31) — same in-card form-section-group role as
+// theirs, previously hand-rolled here as a bare text-xs div. Kept as a
+// separate per-file copy (same duplication convention as money/groupKey
+// above), not a shared component — the fix is visual consistency, not
+// deduplication.
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return <div className="mb-3 mt-6 text-sm font-bold uppercase tracking-wide text-at-navy first:mt-0">{children}</div>;
+}
+
 function groupKey(row: JobOrderRow): string {
   const raw = (row.parent_group_id ?? "").trim();
   const isEmpty = !raw || raw.toLowerCase() === "nan" || raw.toLowerCase() === "none";
@@ -643,9 +653,7 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
         </div>
       </div>
 
-      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-slate">
-        Item Description
-      </div>
+      <SectionHeader>Item Description</SectionHeader>
       <div className="mb-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
         {descShort}
       </div>

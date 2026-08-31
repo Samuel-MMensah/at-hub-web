@@ -52,6 +52,18 @@ function money(n: number): string {
   return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Matches Raise Job Order's and Production Layout's own local SectionHeader
+// byte-for-byte (2026-08-31) — same in-card form-section-group role as
+// theirs, previously hand-rolled here at a smaller size/different color
+// (text-[0.7rem] text-at-slate) with no top-margin rule. Kept as a separate
+// per-file copy rather than a shared component, matching this codebase's
+// existing convention for small presentational helpers (money/groupKey
+// above are the same pattern) — the fix here is visual consistency, not
+// deduplication.
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return <div className="mb-3 mt-6 text-sm font-bold uppercase tracking-wide text-at-navy first:mt-0">{children}</div>;
+}
+
 // Same grouping convention as My Order Tracker's local groupKey — kept as
 // a separate copy since the Python source doesn't factor this into a
 // shared helper either.
@@ -487,9 +499,7 @@ function LineItemCard({
         materialSource={materialSource}
       />
 
-      <div className="mb-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        Job Description
-      </div>
+      <SectionHeader>Job Description</SectionHeader>
       <div className="mb-5 whitespace-pre-wrap rounded-lg border border-at-border bg-at-bg px-4 py-3.5 text-sm leading-relaxed text-slate-800">
         {description}
       </div>
@@ -532,9 +542,7 @@ function FinancialMatrix({
 }) {
   return (
     <div className="mb-5">
-      <div className="mb-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        Financial Matrix
-      </div>
+      <SectionHeader>Financial Matrix</SectionHeader>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 px-4 py-3.5">
           <div className="mb-1 text-[0.68rem] font-bold uppercase tracking-wide text-blue-700">
@@ -612,9 +620,11 @@ function GarmentSpecSection({ order }: { order: PendingOrderRow }) {
 
   return (
     <div className="mb-5">
-      <div className="mb-2.5 flex items-center gap-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        <Shirt size={13} /> Garment Specifications
-      </div>
+      <SectionHeader>
+        <span className="flex items-center gap-1.5">
+          <Shirt size={13} /> Garment Specifications
+        </span>
+      </SectionHeader>
       <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tiles.map((t) => (
           <div key={t.label} className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
@@ -625,9 +635,7 @@ function GarmentSpecSection({ order }: { order: PendingOrderRow }) {
           </div>
         ))}
       </div>
-      <div className="mb-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        Process / Technical Info
-      </div>
+      <SectionHeader>Process / Technical Info</SectionHeader>
       <div className="whitespace-pre-wrap rounded-lg border border-amber-200 bg-amber-50 px-4 py-3.5 text-sm leading-relaxed text-slate-800">
         {process}
       </div>
@@ -645,9 +653,11 @@ function PressSpecSection({ order }: { order: PendingOrderRow }) {
 
   return (
     <div className="mb-5">
-      <div className="mb-2.5 flex items-center gap-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        <Printer size={13} /> Material &amp; Substrate Properties
-      </div>
+      <SectionHeader>
+        <span className="flex items-center gap-1.5">
+          <Printer size={13} /> Material &amp; Substrate Properties
+        </span>
+      </SectionHeader>
       <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr]">
         <div className="rounded-lg border border-at-border bg-at-bg px-4 py-3">
           <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-at-slate-light">
@@ -672,9 +682,7 @@ function PressSpecSection({ order }: { order: PendingOrderRow }) {
           <div className="text-sm font-semibold text-slate-800">{colourImpression}</div>
         </div>
       </div>
-      <div className="mb-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        Post-Press &amp; Finishing
-      </div>
+      <SectionHeader>Post-Press &amp; Finishing</SectionHeader>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-at-border bg-at-bg px-4 py-3">
           <div className="mb-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-at-slate-light">
