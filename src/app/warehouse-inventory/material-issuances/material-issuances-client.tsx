@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
@@ -165,7 +166,7 @@ export function MaterialIssuancesClient({
         <div className="text-base font-bold text-at-navy">Issuance History</div>
         {issuances.length > 0 && (
           <Button onClick={() => downloadCsv(issuances.map(toRow))} className="whitespace-nowrap">
-            ⬇️ Download Issuance CSV
+<Download size={14} /> Download Issuance CSV
           </Button>
         )}
       </div>

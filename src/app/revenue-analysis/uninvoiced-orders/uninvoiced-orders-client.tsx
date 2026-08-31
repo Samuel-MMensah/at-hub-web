@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { groupByMonth, currentMonthKey, type MonthGroup } from "@/lib/month-groups";
@@ -102,7 +103,7 @@ export function UninvoicedOrdersClient({ orders }: { orders: UninvoicedOrderRow[
         </div>
         {orders.length > 0 && (
           <Button variant="secondary" onClick={exportCsv}>
-            ⬇️ Export CSV
+            <Download size={14} /> Export CSV
           </Button>
         )}
       </div>

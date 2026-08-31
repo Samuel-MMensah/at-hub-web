@@ -14,6 +14,7 @@ import {
   YAxis,
   type LabelProps,
 } from "recharts";
+import { Download } from "lucide-react";
 import { monthKeyAndLabel } from "@/lib/month-groups";
 import { weekKeyAndLabel } from "@/lib/week-groups";
 import { DonutChart } from "@/components/ui/donut-chart";
@@ -427,7 +428,7 @@ function DelinquentCustomersSection({ rows }: { rows: DelinquentCustomerRow[] })
         <div className="text-base font-bold text-at-navy">Delinquent Customers</div>
         {rows.length > 0 && (
           <Button variant="secondary" size="sm" onClick={exportCsv}>
-            ⬇️ Download CSV
+            <Download size={14} /> Download CSV
           </Button>
         )}
       </div>
@@ -526,7 +527,9 @@ function AgingDrilldownModal({ bucket, onClose }: { bucket: AgingBucket; onClose
         </div>
 
         <div className="mb-3">
-          <Button onClick={exportCsv}>⬇️ Download CSV</Button>
+          <Button onClick={exportCsv}>
+            <Download size={14} /> Download CSV
+          </Button>
         </div>
 
         <div className="overflow-y-auto rounded-at border border-at-border">

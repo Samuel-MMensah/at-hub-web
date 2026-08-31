@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { notifyReadyForFinance } from "./actions";
 
@@ -30,7 +31,7 @@ export function NotifyFinanceButton({
   if (notified) {
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-at-success-bg px-3 py-1.5 text-xs font-semibold text-at-success-text">
-        ✓ Finance Notified
+        <Check size={13} /> Finance Notified
       </span>
     );
   }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/app/login/actions";
 
@@ -30,8 +31,8 @@ function IdleWarningModal({ secondsLeft, onStay }: { secondsLeft: number; onStay
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
     >
       <div className="w-full max-w-md rounded-at-lg border border-at-border bg-at-white p-6 shadow-xl">
-        <div id="idle-timeout-title" className="mb-2 text-lg font-bold text-at-navy">
-          ⏳ Are you still there?
+        <div id="idle-timeout-title" className="mb-2 flex items-center gap-2 text-lg font-bold text-at-navy">
+          <Clock size={18} /> Are you still there?
         </div>
         <p id="idle-timeout-desc" className="mb-1 text-sm text-at-slate">
           You&apos;ll be logged out in <strong>2 minutes</strong> due to inactivity.

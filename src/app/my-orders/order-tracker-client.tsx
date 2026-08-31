@@ -2,6 +2,23 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  Factory,
+  Warehouse,
+  PackageCheck,
+  Shirt,
+  Printer,
+  FileText,
+  Package,
+  Truck,
+  Calendar,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
 import { MetricCard } from "@/components/ui/metric-card";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
@@ -56,15 +73,22 @@ const STATUS_OPTIONS = [
 const PENDING_STATUSES = ["Pending Approval", "Pending Revision Approval"];
 
 // Ports _status_map from my_order_tracker.py exactly — colors and labels
-// must match the original 1:1.
-const STATUS_MAP: Record<string, { color: string; bg: string; label: string }> = {
-  Approved: { color: "#10b981", bg: "#d1fae5", label: "✓ APPROVED" },
-  Rejected: { color: "#ef4444", bg: "#fee2e2", label: "✗ REJECTED" },
-  "Pending Approval": { color: "#f59e0b", bg: "#fef3c7", label: "⏳ PENDING APPROVAL" },
-  "Pending Revision Approval": { color: "#d97706", bg: "#fffbeb", label: "⚠️ PENDING RE-APPROVAL" },
-  "In Production": { color: "#0369a1", bg: "#e0f2fe", label: "🏭 IN PRODUCTION" },
-  "At Warehouse": { color: "#4f46e5", bg: "#eef2ff", label: "📥 AT WAREHOUSE" },
-  Delivered: { color: "#059669", bg: "#d1fae5", label: "🎯 DELIVERED" },
+// must match the original 1:1. `icon` is a 2026-08-31 addition (Lucide,
+// replacing an emoji prefix baked into `label` itself) — the label text
+// is otherwise unchanged.
+const STATUS_MAP: Record<string, { color: string; bg: string; label: string; icon?: LucideIcon }> = {
+  Approved: { color: "#10b981", bg: "#d1fae5", label: "APPROVED", icon: CheckCircle2 },
+  Rejected: { color: "#ef4444", bg: "#fee2e2", label: "REJECTED", icon: XCircle },
+  "Pending Approval": { color: "#f59e0b", bg: "#fef3c7", label: "PENDING APPROVAL", icon: Clock },
+  "Pending Revision Approval": {
+    color: "#d97706",
+    bg: "#fffbeb",
+    label: "PENDING RE-APPROVAL",
+    icon: AlertTriangle,
+  },
+  "In Production": { color: "#0369a1", bg: "#e0f2fe", label: "IN PRODUCTION", icon: Factory },
+  "At Warehouse": { color: "#4f46e5", bg: "#eef2ff", label: "AT WAREHOUSE", icon: Warehouse },
+  Delivered: { color: "#059669", bg: "#d1fae5", label: "DELIVERED", icon: PackageCheck },
 };
 
 function statusStyle(status: string) {
@@ -567,7 +591,7 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
   const isRevised = status === "Pending Revision Approval";
   const garment = isGarment(order);
 
-  const { color, bg, label } = statusStyle(status);
+  const { color, bg, label, icon: StatusIcon } = statusStyle(status);
   const descShort = desc.length > 90 ? `${desc.slice(0, 90)}…` : desc;
 
   return (
@@ -585,13 +609,21 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
               </span>
             )}
             <span
-              className={`ml-1 inline-block rounded-full border px-2 py-0.5 text-[0.65rem] font-bold ${
+              className={`ml-1 inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[0.65rem] font-bold ${
                 garment
                   ? "border-amber-200 bg-amber-100 text-amber-800"
                   : "border-sky-200 bg-sky-100 text-at-accent"
               }`}
             >
-              {garment ? "🧵 GARMENT" : "🖨 PRESS"}
+              {garment ? (
+                <>
+                  <Shirt size={11} /> GARMENT
+                </>
+              ) : (
+                <>
+                  <Printer size={11} /> PRESS
+                </>
+              )}
             </span>
           </div>
           <div className="text-[1.35rem] font-extrabold tracking-tight text-at-accent">{orderNo}</div>
@@ -602,9 +634,10 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
             <StatusBadge label="SAMPLE" tone="sample" title={order.sample_reason ?? undefined} />
           )}
           <div
-            className="rounded-full border px-3.5 py-1.5 text-xs font-bold tracking-wide"
+            className="inline-flex items-center gap-1 rounded-full border px-3.5 py-1.5 text-xs font-bold tracking-wide"
             style={{ color, backgroundColor: bg, borderColor: `${color}33` }}
           >
+            {StatusIcon && <StatusIcon size={13} />}
             {label}
           </div>
         </div>
@@ -629,24 +662,24 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
       </div>
 
       <div className="mb-3 flex flex-wrap gap-6 text-sm text-at-slate">
-        <span>
-          📦 <strong>{typePrint}</strong>
+        <span className="inline-flex items-center gap-1">
+          <Package size={14} /> <strong>{typePrint}</strong>
         </span>
-        <span>
-          🚚 <strong>{delivery}</strong>
+        <span className="inline-flex items-center gap-1">
+          <Truck size={14} /> <strong>{delivery}</strong>
         </span>
-        <span>
-          📅 Collection: <strong className="text-at-accent">{collection}</strong>
+        <span className="inline-flex items-center gap-1">
+          <Calendar size={14} /> Collection: <strong className="text-at-accent">{collection}</strong>
         </span>
-        <span>
-          ⏰ Balance Deadline: <strong>{balDue}</strong>
+        <span className="inline-flex items-center gap-1">
+          <Clock size={14} /> Balance Deadline: <strong>{balDue}</strong>
         </span>
       </div>
 
       {status === "Approved" && approvedBy !== "—" && (
         <div className="mb-4 rounded-at border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">
-            ✓ Authorized By
+          <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
+            <CheckCircle2 size={13} /> Authorized By
           </span>
           <span className="ml-3 text-sm font-semibold text-emerald-950">{approvedBy}</span>
         </div>
@@ -667,23 +700,25 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
             href={`/raise-order?resubmit=${order.id}`}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-at-danger px-4 py-2.5 text-sm font-bold text-at-white transition-colors hover:bg-red-600"
           >
-            🔄 Modify &amp; Resubmit
+            <RefreshCw size={15} /> Modify &amp; Resubmit
           </Link>
         </div>
       )}
 
       {isRevised && (
-        <div className="mb-4 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-sm text-at-warning-text">
-          <strong>⚠️ Revised Contract:</strong> This order was edited after initial approval and
-          is now awaiting fresh management sign-off. No action is required from you at this
-          stage.
+        <div className="mb-4 flex items-start gap-1.5 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-sm text-at-warning-text">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>
+            <strong>Revised Contract:</strong> This order was edited after initial approval and is
+            now awaiting fresh management sign-off. No action is required from you at this stage.
+          </span>
         </div>
       )}
 
       {status === "At Warehouse" && (
         <div className="mb-4 rounded-at border border-indigo-200 bg-indigo-50 px-4 py-3">
-          <div className="text-xs font-bold uppercase tracking-wide text-indigo-700">
-            📥 At Warehouse — Awaiting Dispatch
+          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700">
+            <Warehouse size={13} /> At Warehouse — Awaiting Dispatch
           </div>
         </div>
       )}
@@ -693,7 +728,17 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
       <div className="flex justify-end">
         <PdfPreviewButton
           orderId={order.id}
-          label={garment ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+          label={
+            garment ? (
+              <>
+                <Shirt size={14} /> Preview Garment PDF
+              </>
+            ) : (
+              <>
+                <FileText size={14} /> Preview PDF
+              </>
+            )
+          }
         />
       </div>
     </div>
@@ -722,8 +767,8 @@ function PipelineBanner({ orderNo, jobs }: { orderNo: string; jobs: JobRow[] }) 
   if (pipeline && !pipeline.allDone) {
     return (
       <div className="mb-4 rounded-at border border-sky-200 bg-sky-50 px-4 py-3">
-        <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-accent">
-          🏭 In Production
+        <div className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-at-accent">
+          <Factory size={13} /> In Production
         </div>
         <div className="text-sm text-sky-950">
           Current stage: <strong>{pipeline.currentMachine}</strong>
@@ -740,8 +785,8 @@ function PipelineBanner({ orderNo, jobs }: { orderNo: string; jobs: JobRow[] }) 
   }
 
   return (
-    <div className="mb-4 rounded-at border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
-      🏭 In production — detailed schedule not available for this order yet.
+    <div className="mb-4 flex items-center gap-1.5 rounded-at border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+      <Factory size={15} /> In production — detailed schedule not available for this order yet.
     </div>
   );
 }

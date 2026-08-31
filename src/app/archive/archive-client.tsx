@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Wallet, Check, CheckCircle2, Shirt, FileText, Paperclip, Image, AlertTriangle, Undo2, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
@@ -382,7 +383,9 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
 
       {balance > 0 ? (
         <div className="mb-5 border-t border-at-border pt-4">
-          <div className="mb-2 text-sm font-bold text-at-navy">💰 Record Balance Payment</div>
+          <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-at-navy">
+            <Wallet size={15} /> Record Balance Payment
+          </div>
           <div className="mb-3">
             <div className="text-xs text-at-slate">Outstanding Balance</div>
             <div className="text-xl font-extrabold text-red-600">{money(balance)}</div>
@@ -395,7 +398,9 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
             // reads this order, so the write path is disabled outright
             // rather than silently accepted and ignored.
             <>
-              <Button disabled>✓ Record Payment</Button>
+              <Button disabled>
+                <Check size={15} /> Record Payment
+              </Button>
               <div className="mt-2 text-sm text-at-slate">
                 This order has a linked invoice — record payment through Invoice Entry instead.
               </div>
@@ -433,15 +438,15 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
               {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
               {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
               <Button disabled={isPending || payAmt <= 0 || payAmt > balance} onClick={handleRecordPayment}>
-                ✓ Record Payment
+                <Check size={15} /> Record Payment
               </Button>
             </>
           )}
         </div>
       ) : total > 0 ? (
         <div className="mb-5 border-t border-at-border pt-4">
-          <div className="inline-block rounded-md border border-green-200 bg-green-50 px-3.5 py-2 text-sm font-semibold text-green-800">
-            ✅ Fully Paid — {money(total)}
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-3.5 py-2 text-sm font-semibold text-green-800">
+            <CheckCircle2 size={15} /> Fully Paid — {money(total)}
           </div>
         </div>
       ) : null}
@@ -449,7 +454,17 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
       <div className="border-t border-at-border pt-4">
         <PdfPreviewButton
           orderId={order.id}
-          label={garment ? "🧵 Export Garment PDF Manifest" : "📄 Export Official PDF Manifest"}
+          label={
+            garment ? (
+              <>
+                <Shirt size={14} /> Export Garment PDF Manifest
+              </>
+            ) : (
+              <>
+                <FileText size={14} /> Export Official PDF Manifest
+              </>
+            )
+          }
         />
       </div>
 
@@ -464,7 +479,15 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
 // One attachment link. The bucket is private and the stored value is a raw
 // object path, so the signed URL is fetched FRESH from the server on click
 // (never a stored, expiring value) and opened in a new tab.
-function AttachmentLink({ pathOrUrl, label, icon }: { pathOrUrl: string; label: string; icon: string }) {
+function AttachmentLink({
+  pathOrUrl,
+  label,
+  icon: Icon,
+}: {
+  pathOrUrl: string;
+  label: string;
+  icon: LucideIcon;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -483,7 +506,13 @@ function AttachmentLink({ pathOrUrl, label, icon }: { pathOrUrl: string; label: 
   return (
     <div>
       <Button variant="secondary" disabled={isPending} onClick={open}>
-        {isPending ? "Opening…" : `${icon} ${label}`}
+        {isPending ? (
+          "Opening…"
+        ) : (
+          <>
+            <Icon size={14} /> {label}
+          </>
+        )}
       </Button>
       {error && <div className="mt-1 text-xs font-semibold text-red-600">{error}</div>}
     </div>
@@ -494,13 +523,15 @@ function AttachmentsSection({ order }: { order: ArchiveOrderRow }) {
   if (!order.lpo_file_url && !order.sample_file_url) return null;
   return (
     <div className="mt-5 border-t border-at-border pt-4">
-      <div className="mb-2 text-sm font-bold text-at-navy">📎 Attachments</div>
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-at-navy">
+        <Paperclip size={15} /> Attachments
+      </div>
       <div className="flex flex-wrap gap-3">
         {order.lpo_file_url && (
-          <AttachmentLink pathOrUrl={order.lpo_file_url} label="View LPO" icon="📄" />
+          <AttachmentLink pathOrUrl={order.lpo_file_url} label="View LPO" icon={FileText} />
         )}
         {order.sample_file_url && (
-          <AttachmentLink pathOrUrl={order.sample_file_url} label="View Sample Photo" icon="🖼️" />
+          <AttachmentLink pathOrUrl={order.sample_file_url} label="View Sample Photo" icon={Image} />
         )}
       </div>
       <div className="mt-1.5 text-[0.7rem] text-at-slate">
@@ -552,8 +583,8 @@ function RevisionForm({ order, garment }: { order: ArchiveOrderRow; garment: boo
       <div className="mb-3 text-base font-semibold text-at-navy">Master Order Revision Interface</div>
 
       <div className="mb-4 rounded-lg border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
-        <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
-          ⚠️ Revision Lifecycle Notice
+        <div className="mb-1 flex items-center gap-1.5 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
+          <AlertTriangle size={13} /> Revision Lifecycle Notice
         </div>
         <div className="text-sm text-at-warning-text">
           Saving changes will move this order from <strong>Approved</strong> →{" "}
@@ -749,7 +780,7 @@ function ReopenOrderSection({ order }: { order: ArchiveOrderRow }) {
       {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
       {success && <div className="mb-3 text-sm font-semibold text-emerald-600">{success}</div>}
       <Button disabled={isPending} onClick={handleReopen}>
-        ↩ Reopen Order (undo Finalize Dispatch)
+        <Undo2 size={15} /> Reopen Order (undo Finalize Dispatch)
       </Button>
     </div>
   );

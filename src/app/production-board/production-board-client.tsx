@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Shirt, FileText } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
@@ -164,7 +165,17 @@ function ProductionOrderCard({ order }: { order: ProductionOrderRow & { _dept: D
         )}
         <PdfPreviewButton
           orderId={order.id}
-          label={order._dept === "GARMENT" ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+          label={
+            order._dept === "GARMENT" ? (
+              <>
+                <Shirt size={14} /> Preview Garment PDF
+              </>
+            ) : (
+              <>
+                <FileText size={14} /> Preview PDF
+              </>
+            )
+          }
         />
       </div>
     </div>

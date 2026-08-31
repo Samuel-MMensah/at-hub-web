@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Search, ArrowLeft, Shirt, FileText } from "lucide-react";
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
@@ -90,11 +91,14 @@ export default async function SearchPage({
       <TopBar title="Appointed Time Printing Ltd." subtitle="Secured Capacity Planning Engine" />
 
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-lg font-bold text-at-navy-soft">
-          🔍 Search Results{query ? ` — ${query}` : ""}
+        <div className="flex items-center gap-2 text-lg font-bold text-at-navy-soft">
+          <Search size={18} /> Search Results{query ? ` — ${query}` : ""}
         </div>
-        <Link href="/command-center" className="text-sm font-semibold text-at-accent hover:underline">
-          ← Back to Command Center
+        <Link
+          href="/command-center"
+          className="flex items-center gap-1 text-sm font-semibold text-at-accent hover:underline"
+        >
+          <ArrowLeft size={14} /> Back to Command Center
         </Link>
       </div>
 
@@ -160,7 +164,17 @@ export default async function SearchPage({
                     <div className="mt-2">
                       <PdfPreviewButton
                         orderId={order.id}
-                        label={garment ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+                        label={
+                          garment ? (
+                            <>
+                              <Shirt size={14} /> Preview Garment PDF
+                            </>
+                          ) : (
+                            <>
+                              <FileText size={14} /> Preview PDF
+                            </>
+                          )
+                        }
                       />
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Download, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
@@ -228,7 +229,7 @@ export function InvoiceEntryClient({
         <div className="text-base font-bold text-at-navy">Invoice History</div>
         {invoices.length > 0 && (
           <Button variant="secondary" onClick={() => downloadCsv("ATP_invoice_history", INVOICE_HISTORY_COLUMNS, invoices.map(invoiceRowToCsv))}>
-            ⬇️ Download CSV
+            <Download size={14} /> Download CSV
           </Button>
         )}
       </div>
@@ -853,8 +854,8 @@ function InvoiceForm({
           stays disabled (see canSubmit) until this is acknowledged. */}
       {hasExistingPayment && (
         <div className="mb-4 rounded-lg border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
-          <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
-            ⚠️ Payment Already Recorded
+          <div className="mb-1 flex items-center gap-1.5 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
+            <AlertTriangle size={13} /> Payment Already Recorded
           </div>
           <div className="mb-2 text-sm text-at-warning-text">
             This invoice already has {money(round2(editingInvoice.payment))} recorded as paid. Changing the

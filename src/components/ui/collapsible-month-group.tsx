@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 interface CollapsibleMonthGroupProps {
   // Widened from `string` to `React.ReactNode` (2026-08-31, UI
@@ -53,7 +54,9 @@ export function CollapsibleMonthGroup({
         onClick={() => setExpanded((e) => !e)}
         className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-bold text-at-navy hover:bg-at-bg"
       >
-        <span className="text-at-slate-light">{expanded ? "▼" : "▶"}</span>
+        <span className="text-at-slate-light">
+          {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        </span>
         {monthLabel}
         {itemCount !== undefined && (
           <span className="font-semibold text-at-slate">

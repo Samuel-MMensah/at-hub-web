@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { groupByMonth, currentMonthKey, type MonthGroup } from "@/lib/month-groups";
@@ -212,7 +213,13 @@ function CategoryReportPdfButton({
   return (
     <>
       <Button variant="secondary" onClick={handleOpen} disabled={state.status === "loading"}>
-        {state.status === "loading" ? "Generating PDF…" : "📄 Export PDF"}
+        {state.status === "loading" ? (
+          "Generating PDF…"
+        ) : (
+          <>
+            <FileText size={14} /> Export PDF
+          </>
+        )}
       </Button>
 
       {state.status === "error" && <div className="mt-2 text-sm font-semibold text-red-600">{state.message}</div>}
@@ -390,7 +397,7 @@ export function CategoryReportClient({
             {reportRows.length > 0 && (
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={exportCsv}>
-                  ⬇️ Export CSV
+<Download size={14} /> Export CSV
                 </Button>
                 <CategoryReportPdfButton categories={categories} fromDate={fromDate} toDate={toDate} />
               </div>

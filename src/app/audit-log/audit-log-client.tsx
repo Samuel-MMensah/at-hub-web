@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
@@ -183,7 +184,7 @@ export function AuditLogClient({ orders }: { orders: AuditOrderRow[] }) {
             className="flex-1 rounded-at border border-at-border bg-at-white px-4 py-2.5 text-sm text-at-navy outline-none focus:border-at-accent"
           />
           <Button onClick={() => downloadCsv(filtered.map(toRow))} className="whitespace-nowrap">
-            ⬇️ Download Audit Log CSV
+<Download size={14} /> Download Audit Log CSV
           </Button>
         </div>
 

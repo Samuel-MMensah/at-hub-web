@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import { Button } from "./button";
 import { createClient } from "@/lib/supabase/client";
 
@@ -9,9 +10,13 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 interface PdfPreviewButtonProps {
   orderId: number;
   /** Full button label, including any icon prefix the caller wants
-   * (e.g. "🧵 Preview Garment PDF") — this component doesn't know about
-   * department classification, callers already do. */
-  label?: string;
+   * (e.g. <><Shirt size={14} /> Preview Garment PDF</>) — this component
+   * doesn't know about department classification, callers already do.
+   * React.ReactNode, not just string, so a caller's icon+text pair
+   * renders as real sibling elements rather than being flattened into
+   * plain text (2026-08-31, same "widen rather than fork" precedent as
+   * MetricCard's label). */
+  label?: React.ReactNode;
 }
 
 type PreviewState =
@@ -20,7 +25,13 @@ type PreviewState =
   | { status: "error"; message: string }
   | { status: "ready"; url: string; filename: string };
 
-export function PdfPreviewButton({ orderId, label = "Preview PDF" }: PdfPreviewButtonProps) {
+const DEFAULT_LABEL = (
+  <>
+    <FileText size={14} /> Preview PDF
+  </>
+);
+
+export function PdfPreviewButton({ orderId, label = DEFAULT_LABEL }: PdfPreviewButtonProps) {
   const [state, setState] = useState<PreviewState>({ status: "idle" });
   const activeUrlRef = useRef<string | null>(null);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
@@ -142,7 +143,7 @@ export function MaterialReceiptsClient({
         <div className="text-base font-bold text-at-navy">Receipt History</div>
         {receipts.length > 0 && (
           <Button onClick={() => downloadCsv(receipts.map(toRow))} className="whitespace-nowrap">
-            ⬇️ Download Receipts CSV
+<Download size={14} /> Download Receipts CSV
           </Button>
         )}
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Shirt, Printer, AlertTriangle, ClipboardList, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
@@ -228,7 +229,7 @@ function PaginationBar({
   return (
     <div className="flex items-center justify-center gap-4">
       <Button variant="secondary" size="sm" onClick={onPrev} disabled={page === 0}>
-        ◀ Prev
+        <ChevronLeft size={14} /> Prev
       </Button>
       <div className="text-sm text-at-slate">
         Page <strong className="text-at-navy">{page + 1}</strong> / {totalPages}
@@ -240,7 +241,7 @@ function PaginationBar({
         )}
       </div>
       <Button variant="secondary" size="sm" onClick={onNext} disabled={page >= totalPages - 1}>
-        Next ▶
+        Next <ChevronRight size={14} />
       </Button>
     </div>
   );
@@ -261,8 +262,8 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
   const totalValue = group.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0);
   const hasGarment = group.some((o) => isGarment(o));
   const allGarment = group.every((o) => isGarment(o));
-  const deptBadge =
-    hasGarment && !allGarment ? "🧵 GARMENT" : hasGarment ? "🧵 GARMENT DEPT" : "🖨 PRESS DEPT";
+  const deptLabel = hasGarment && !allGarment ? "GARMENT" : hasGarment ? "GARMENT DEPT" : "PRESS DEPT";
+  const DeptIcon = hasGarment ? Shirt : Printer;
   const itemCount = group.length;
   const badge = isMulti ? `${itemCount} LINE ITEM(S)` : "INDIVIDUAL ORDER";
 
@@ -270,9 +271,16 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
     <div className="mt-4">
       <div className="flex flex-col items-start justify-between gap-3 rounded-xl bg-at-navy px-6 py-5 text-at-white sm:flex-row sm:items-center">
         <div>
-          <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-slate-400">
-            CLIENT SUBMISSION — {badge} — {deptBadge}
-            {hasRevision && <span className="ml-2 text-at-warning">⚠️ REVISED</span>}
+          <div className="mb-1 flex flex-wrap items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wide text-slate-400">
+            <span>CLIENT SUBMISSION — {badge} —</span>
+            <span className="inline-flex items-center gap-0.5">
+              <DeptIcon size={11} /> {deptLabel}
+            </span>
+            {hasRevision && (
+              <span className="inline-flex items-center gap-0.5 text-at-warning">
+                <AlertTriangle size={11} /> REVISED
+              </span>
+            )}
           </div>
           <div className="text-[1.35rem] font-extrabold tracking-tight">{customer}</div>
           <div className="mt-0.5 text-sm text-slate-400">
@@ -289,7 +297,7 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
 
       {hasRevision && (
         <div className="mt-2 flex gap-3 rounded-lg border-2 border-l-[6px] border-at-warning bg-at-warning-bg px-5 py-3.5">
-          <div className="flex-shrink-0 text-2xl">⚠️</div>
+          <AlertTriangle size={26} className="shrink-0 text-at-warning-text" />
           <div>
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-warning-text">
               Attention: Revised Contract
@@ -307,10 +315,14 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
       <div className="mt-2">
         <CollapsibleMonthGroup
           monthLabel={
-            <>
-              📋 {customer}
-              {hasRevision && <span className="text-at-warning-text"> · ⚠️ includes REVISED items</span>}
-            </>
+            <span className="inline-flex items-center gap-1">
+              <ClipboardList size={14} /> {customer}
+              {hasRevision && (
+                <span className="inline-flex items-center gap-0.5 text-at-warning-text">
+                  · <AlertTriangle size={12} /> includes REVISED items
+                </span>
+              )}
+            </span>
           }
           itemCount={itemCount}
           itemLabel="line item(s)"
@@ -400,11 +412,19 @@ function LineItemCard({
             </span>
           )}
           <span
-            className={`rounded px-1.5 py-0.5 text-[0.6rem] font-bold ${
+            className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[0.6rem] font-bold ${
               garment ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-at-accent"
             }`}
           >
-            {garment ? "🧵 GARMENT" : "🖨 PRESS"}
+            {garment ? (
+              <>
+                <Shirt size={10} /> GARMENT
+              </>
+            ) : (
+              <>
+                <Printer size={10} /> PRESS
+              </>
+            )}
           </span>
         </div>
       )}
@@ -430,13 +450,21 @@ function LineItemCard({
             {typePrint}
           </div>
           <div
-            className={`mt-1.5 block w-fit rounded-lg border px-3 py-1 text-xs font-bold sm:ml-auto ${
+            className={`mt-1.5 flex w-fit items-center gap-1 rounded-lg border px-3 py-1 text-xs font-bold sm:ml-auto ${
               garment
                 ? "border-amber-200 bg-amber-100 text-amber-800"
                 : "border-sky-200 bg-sky-100 text-at-accent"
             }`}
           >
-            {garment ? "🧵 GARMENT" : "🖨 PRESS"}
+            {garment ? (
+              <>
+                <Shirt size={13} /> GARMENT
+              </>
+            ) : (
+              <>
+                <Printer size={13} /> PRESS
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -478,10 +506,10 @@ function LineItemCard({
         {error && <div className="mb-3 text-sm font-semibold text-red-600">{error}</div>}
         <div className="flex gap-3">
           <Button variant="primary" size="sm" disabled={isPending} onClick={handleApprove}>
-            ✓ Approve Order
+            <Check size={14} /> Approve Order
           </Button>
           <Button variant="danger" size="sm" disabled={isPending} onClick={handleReject}>
-            ✗ Reject / Return
+            <X size={14} /> Reject / Return
           </Button>
         </div>
       </div>
@@ -584,8 +612,8 @@ function GarmentSpecSection({ order }: { order: PendingOrderRow }) {
 
   return (
     <div className="mb-5">
-      <div className="mb-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        🧵 Garment Specifications
+      <div className="mb-2.5 flex items-center gap-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+        <Shirt size={13} /> Garment Specifications
       </div>
       <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {tiles.map((t) => (
@@ -617,8 +645,8 @@ function PressSpecSection({ order }: { order: PendingOrderRow }) {
 
   return (
     <div className="mb-5">
-      <div className="mb-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-        🖨 Material &amp; Substrate Properties
+      <div className="mb-2.5 flex items-center gap-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+        <Printer size={13} /> Material &amp; Substrate Properties
       </div>
       <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr]">
         <div className="rounded-lg border border-at-border bg-at-bg px-4 py-3">

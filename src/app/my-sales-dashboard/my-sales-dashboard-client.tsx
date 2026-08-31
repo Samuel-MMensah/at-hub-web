@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
@@ -310,7 +311,7 @@ export function MySalesDashboardClient({
             Client Breakdown — {repName}
           </div>
           <Button onClick={exportBreakdownCsv} disabled={clientBreakdown.length === 0}>
-            ⬇️ Download Client Breakdown CSV
+            <Download size={14} /> Download Client Breakdown CSV
           </Button>
         </div>
 
@@ -367,7 +368,7 @@ export function MySalesDashboardClient({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="text-base font-bold text-at-navy">Recent Activity</div>
           <Button onClick={exportActivityCsv} disabled={sortedInvoices.length === 0}>
-            ⬇️ Download Activity CSV
+            <Download size={14} /> Download Activity CSV
           </Button>
         </div>
 

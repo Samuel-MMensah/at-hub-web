@@ -1,6 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import {
+  Paperclip,
+  ShoppingCart,
+  Pencil,
+  X,
+  AlertTriangle,
+  Trash2,
+  FileText,
+  Shirt,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { submitBatch, resubmitOrder as resubmitOrderAction } from "./actions";
@@ -120,8 +131,8 @@ function AttachmentsAndTermsSection({
 }) {
   return (
     <div className="mt-6">
-      <div className="mb-3 text-base font-bold text-at-navy">
-        📎 Attachments &amp; Terms — Applies to This Whole Batch
+      <div className="mb-3 flex items-center gap-1.5 text-base font-bold text-at-navy">
+        <Paperclip size={15} /> Attachments &amp; Terms — Applies to This Whole Batch
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FormField label="Upload LPO (optional) — goes to MD/FM">
@@ -1000,8 +1011,8 @@ function PressCart({
     <div>
       {cartItems.length > 0 && (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 px-5 py-3.5">
-          <div className="text-sm font-bold text-green-800">
-            🛒 {cartItems.length} item(s) in cart for {cartClientName || "—"}
+          <div className="flex items-center gap-1.5 text-sm font-bold text-green-800">
+            <ShoppingCart size={15} /> {cartItems.length} item(s) in cart for {cartClientName || "—"}
           </div>
           <div className="text-xs text-green-700">
             Add more items below, or scroll down to submit the batch
@@ -1276,8 +1287,8 @@ function PressCart({
 
       {cartItems.length > 0 && (
         <div className="mt-6">
-          <div className="mb-3 text-base font-bold text-at-navy">
-            🛒 Active Cart — {cartItems.length} Item(s) for {cartClientName}
+          <div className="mb-3 flex items-center gap-1.5 text-base font-bold text-at-navy">
+            <ShoppingCart size={16} /> Active Cart — {cartItems.length} Item(s) for {cartClientName}
           </div>
           <div className="flex flex-col gap-2">
             {cartItems.map((item, idx) => {
@@ -1308,10 +1319,10 @@ function PressCart({
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => startEditing(idx)}>
-                    ✏️ Edit
+                    <Pencil size={13} /> Edit
                   </Button>
                   <Button variant="danger" size="sm" onClick={() => removeItem(idx)}>
-                    ✕ Remove
+                    <X size={13} /> Remove
                   </Button>
                 </div>
               );
@@ -1324,8 +1335,8 @@ function PressCart({
             <SummaryTile label="Combined Contract Value" value={money(cartTotal)} valueColor="#34d399" />
             <SummaryTile label="Total Deposit Collected" value={money(cartDeposit)} valueColor="#7dd3fc" />
             {cartHasBalance && (
-              <div className="rounded-full border border-at-warning bg-at-warning/10 px-3 py-1 text-xs font-bold text-at-warning">
-                ⚠️ Outstanding balance in this batch
+              <div className="flex items-center gap-1 rounded-full border border-at-warning bg-at-warning/10 px-3 py-1 text-xs font-bold text-at-warning">
+                <AlertTriangle size={12} /> Outstanding balance in this batch
               </div>
             )}
           </div>
@@ -1350,7 +1361,7 @@ function PressCart({
               {isSubmitting ? "SUBMITTING…" : `SUBMIT ${cartItems.length} ITEM(S) FOR MANAGEMENT APPROVAL`}
             </Button>
             <Button variant="secondary" onClick={clearCart} disabled={isSubmitting}>
-              🗑 Clear Cart
+              <Trash2 size={14} /> Clear Cart
             </Button>
           </div>
         </div>
@@ -1389,7 +1400,14 @@ function PressCart({
                       {String(ticket.type_of_print ?? "")} &nbsp;·&nbsp; {money(Number(ticket.total_amount ?? 0))}
                     </div>
                   </div>
-                  <PdfPreviewButton orderId={Number(ticket.id)} label="📄 Export PDF" />
+                  <PdfPreviewButton
+                    orderId={Number(ticket.id)}
+                    label={
+                      <>
+                        <FileText size={14} /> Export PDF
+                      </>
+                    }
+                  />
                 </div>
               );
             })}
@@ -1826,8 +1844,9 @@ function GarmentCart({
 
       {isEditing && (
         <div className="mb-3 flex items-center justify-between rounded-at border border-sky-200 bg-sky-50 px-4 py-2.5">
-          <div className="text-sm text-sky-900">
-            ✏️ Editing Item {(editingIdx as number) + 1} — correct the fields below and click Update.
+          <div className="flex items-center gap-1.5 text-sm text-sky-900">
+            <Pencil size={14} /> Editing Item {(editingIdx as number) + 1} — correct the fields below
+            and click Update.
           </div>
           <Button variant="secondary" size="sm" onClick={cancelEditing}>
             Cancel Edit
@@ -2117,14 +2136,14 @@ function GarmentCart({
         )}
 
         <div className="mt-4">
-          <Button onClick={handleAddOrUpdate}>{isEditing ? "💾 Update Item in Cart" : "Add Item to Cart"}</Button>
+          <Button onClick={handleAddOrUpdate}>{isEditing ? "Update Item in Cart" : "Add Item to Cart"}</Button>
         </div>
       </div>
 
       {cartItems.length > 0 && (
         <div className="mt-6">
-          <div className="mb-3 text-base font-bold text-at-navy">
-            🧵 Garment Cart — {cartItems.length} Item(s) for {cartClientName}
+          <div className="mb-3 flex items-center gap-1.5 text-base font-bold text-at-navy">
+            <Shirt size={16} /> Garment Cart — {cartItems.length} Item(s) for {cartClientName}
           </div>
           <div className="flex flex-col gap-2">
             {cartItems.map((item, idx) => {
@@ -2155,10 +2174,10 @@ function GarmentCart({
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => startEditing(idx)}>
-                    ✏️ Edit
+                    <Pencil size={13} /> Edit
                   </Button>
                   <Button variant="danger" size="sm" onClick={() => removeItem(idx)}>
-                    ✕ Remove
+                    <X size={13} /> Remove
                   </Button>
                 </div>
               );
@@ -2179,8 +2198,8 @@ function GarmentCart({
               valueColor="#fcd34d"
             />
             {cartHasBalance && (
-              <div className="rounded-full border border-at-warning bg-at-warning/10 px-3 py-1 text-xs font-bold text-at-warning">
-                ⚠️ Outstanding balance in this batch
+              <div className="flex items-center gap-1 rounded-full border border-at-warning bg-at-warning/10 px-3 py-1 text-xs font-bold text-at-warning">
+                <AlertTriangle size={12} /> Outstanding balance in this batch
               </div>
             )}
           </div>
@@ -2204,10 +2223,10 @@ function GarmentCart({
             <Button disabled={isSubmitting} onClick={handleSubmitBatch}>
               {isSubmitting
                 ? "SUBMITTING…"
-                : `🚀 SUBMIT ${cartItems.length} GARMENT ITEM(S) FOR MANAGEMENT APPROVAL`}
+                : `SUBMIT ${cartItems.length} GARMENT ITEM(S) FOR MANAGEMENT APPROVAL`}
             </Button>
             <Button variant="secondary" onClick={clearCart} disabled={isSubmitting}>
-              🗑 Clear Cart
+              <Trash2 size={14} /> Clear Cart
             </Button>
           </div>
         </div>
@@ -2247,7 +2266,14 @@ function GarmentCart({
                       {String(ticket.print_type ?? "")} &nbsp;·&nbsp; {money(Number(ticket.total_amount ?? 0))}
                     </div>
                   </div>
-                  <PdfPreviewButton orderId={Number(ticket.id)} label="📄 Export Garment PDF" />
+                  <PdfPreviewButton
+                    orderId={Number(ticket.id)}
+                    label={
+                      <>
+                        <Shirt size={14} /> Export Garment PDF
+                      </>
+                    }
+                  />
                 </div>
               );
             })}
@@ -2433,7 +2459,14 @@ function ResubmitConfirmation({ ticket }: { ticket: Record<string, unknown> }) {
         Ref: {String(ticket.job_order_no ?? "PENDING")} — routed to management authorization queue
       </div>
       <div className="mt-3">
-        <PdfPreviewButton orderId={Number(ticket.id)} label="📄 Export PDF Manifest" />
+        <PdfPreviewButton
+          orderId={Number(ticket.id)}
+          label={
+            <>
+              <FileText size={14} /> Export PDF Manifest
+            </>
+          }
+        />
       </div>
     </div>
   );
@@ -2840,7 +2873,13 @@ function PressResubmitForm({
 
         <div className="mt-4">
           <Button disabled={isSubmitting} onClick={handleResubmit}>
-            {isSubmitting ? "RESUBMITTING…" : "🔄 RESUBMIT FOR MANAGEMENT APPROVAL"}
+            {isSubmitting ? (
+              "RESUBMITTING…"
+            ) : (
+              <>
+                <RefreshCw size={14} /> RESUBMIT FOR MANAGEMENT APPROVAL
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -3290,7 +3329,13 @@ function GarmentResubmitForm({
 
         <div className="mt-4">
           <Button disabled={isSubmitting} onClick={handleResubmit}>
-            {isSubmitting ? "RESUBMITTING…" : "🔄 RESUBMIT FOR MANAGEMENT APPROVAL"}
+            {isSubmitting ? (
+              "RESUBMITTING…"
+            ) : (
+              <>
+                <RefreshCw size={14} /> RESUBMIT FOR MANAGEMENT APPROVAL
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart,
 } from "recharts";
+import { AlertTriangle } from "lucide-react";
 import { weekStart } from "@/lib/week-groups";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import {
@@ -695,11 +696,14 @@ function CategoryView({
       </div>
 
       {hasUncategorized && (
-        <div className="mt-3 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-xs font-semibold text-at-warning-text">
-          ⚠ {uncategorized.jobs.size} order(s) have a print type not covered by the category
-          mapping — they are flagged in the browser console (orderCategory) and NOT included in the
-          six categories above, so this section would no longer sum to the department totals until a
-          mapping rule is added. Revenue not shown here: {money(uncategorized.revenue, 2)}.
+        <div className="mt-3 flex items-start gap-1.5 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-xs font-semibold text-at-warning-text">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            {uncategorized.jobs.size} order(s) have a print type not covered by the category
+            mapping — they are flagged in the browser console (orderCategory) and NOT included in
+            the six categories above, so this section would no longer sum to the department totals
+            until a mapping rule is added. Revenue not shown here: {money(uncategorized.revenue, 2)}.
+          </span>
         </div>
       )}
     </div>

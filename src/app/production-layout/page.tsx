@@ -37,10 +37,7 @@ export default async function ProductionLayoutPage() {
       </div>
 
       {!allowed ? (
-        <RestrictedAccess
-          icon="🔒"
-          message="The Production Layout Builder is reserved for plant administrators. Use the Raise Job Order module to submit orders for the production pipeline."
-        />
+        <RestrictedAccess message="The Production Layout Builder is reserved for plant administrators. Use the Raise Job Order module to submit orders for the production pipeline." />
       ) : (
         <ProductionLayoutClient orders={orders} />
       )}

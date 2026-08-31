@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Shirt, FileText } from "lucide-react";
 import { PdfPreviewButton } from "@/components/ui/pdf-preview-button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
@@ -148,7 +149,17 @@ function ReceivingTab({
                     <NotifyFinanceButton orderId={order.id} initiallyNotified={alreadyNotified} />
                     <PdfPreviewButton
                       orderId={order.id}
-                      label={garment ? "🧵 Preview Garment PDF" : "📄 Preview PDF"}
+                      label={
+                        garment ? (
+                          <>
+                            <Shirt size={14} /> Preview Garment PDF
+                          </>
+                        ) : (
+                          <>
+                            <FileText size={14} /> Preview PDF
+                          </>
+                        )
+                      }
                     />
                   </div>
                 </div>

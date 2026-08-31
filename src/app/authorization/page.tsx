@@ -43,7 +43,7 @@ export default async function AuthorizationPage() {
       <div className="mb-4 text-lg font-bold text-at-navy-soft">Executive Authorization Control Panel</div>
 
       {!allowed ? (
-        <RestrictedAccess icon="🔒" message="The Authorization Center is reserved for administrators." />
+        <RestrictedAccess message="The Authorization Center is reserved for administrators." />
       ) : (
         <AuthorizationClient orders={orders} />
       )}

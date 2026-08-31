@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Download } from "lucide-react";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -277,7 +278,7 @@ export function SamplesClient({ samples }: { samples: SampleRow[] }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-base font-bold text-at-navy">All Samples</div>
         <Button onClick={() => downloadCsv(CSV_COLUMNS, samples.map(sampleToCsvRow))} disabled={samples.length === 0}>
-          ⬇️ Download Samples CSV
+<Download size={14} /> Download Samples CSV
         </Button>
       </div>
 
