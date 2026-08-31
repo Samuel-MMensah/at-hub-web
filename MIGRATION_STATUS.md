@@ -1729,6 +1729,96 @@ investigated and **deliberately deferred**, not forgotten:
   can still reach GitHub only via `git push --no-verify`, which is why
   that flag is never used to route around a real failure.
 
+## UI Conventions
+
+Formalized 2026-08-31, following a full read-only UX audit across every
+route (organized by the sidebar's three groups: Plant Operations,
+Administrative Portal, Reporting & Oversight) that found each of the
+five patterns below implemented two or more different ways across the
+app, with no rule ever having decided which one was "right." Documented
+here BEFORE any individual page from that audit gets fixed, specifically
+so the dozen-plus fixes that follow don't each independently re-decide
+these — every future page (new or fixed) follows the rule below, not
+whichever nearby example it happens to copy from.
+
+1. **Pill toggle sizing.** Every Weekly/Monthly, status-filter,
+   category-filter, or view-switch pill toggle uses `rounded-full
+   border px-4 py-1.5 text-sm font-semibold` (the active/inactive color
+   classes already agree everywhere: `border-at-navy bg-at-navy
+   text-at-white` active, `border-at-border bg-at-white text-at-slate
+   hover:border-at-accent` inactive). This is Command Center's Trend/
+   Departmental Performance toggle and Revenue Analysis's Weekly/Monthly
+   toggle — the more recently built convention, chosen over the smaller
+   `px-3 py-1 text-xs` variant currently on My Order Tracker, Category
+   Report, Samples, and Audit Log. Those four get migrated to the larger
+   size when their turn comes; nothing new should ever be built at the
+   smaller size again.
+
+2. **Amber callout / warning box.** `--at-warning-bg` (`#fef7e0`) and
+   `--at-warning-text` (`#b06000`) (`src/app/globals.css`) are the ONLY
+   sanctioned colors for a warning/callout box, full stop. Raw Tailwind
+   `bg-amber-50`/`text-amber-800`/`border-amber-300` (and any gradient
+   variant, e.g. Archive's Revision Lifecycle Notice) is deprecated
+   everywhere it currently appears (Command Center's uncategorized-
+   orders warning, Raise Job Order's duplicate-client warning, Material
+   Receipts'/Material Issuances' `EditedBadge`, Archive). These are NOT
+   the same shade as Tailwind's stock `amber-*` scale — a find/replace
+   of class names alone would silently shift the actual color, so each
+   fix needs the real token classes, not a renamed equivalent.
+
+3. **Money formatting.** Tight `"GH₵1,234.00"` (no space after the
+   currency symbol) is the app-wide standard, already the convention on
+   the Finance/Revenue family (Invoice Entry, Category Report,
+   Uninvoiced Orders, Revenue Analysis) — chosen over the spaced
+   `"GH₵ 1,234.00"` variant on Raise Job Order, Authorization Center, My
+   Order Tracker, and Dispatch, since tight is already standard on the
+   pages that handle the most financial detail. Those four get migrated
+   to tight when their turn comes.
+
+4. **Scope disclosure: InfoPopover vs. permanent caption.** These are
+   NOT interchangeable choices — each has a distinct, now-documented
+   job:
+   - **InfoPopover** (the small "(i)" hover/click icon — exported from
+     `src/app/command-center/charts.tsx`) is the standard for a "what's
+     included/excluded" scope fact: which statuses, which date window,
+     which table a figure is drawn from. Default choice for any new
+     figure that needs this kind of disclosure. Reference examples:
+     Command Center's KPI cards, Trend chart, Departmental Performance,
+     Revenue by Job, Order Intake Trend.
+   - **Permanent, always-visible caption**
+     (`<div className="text-xs text-at-slate">`) is reserved for
+     exactly two cases, not a general-purpose alternative to the
+     popover: (a) a plain "how this feature works" explanation with no
+     scope caveat to hide behind a click — Material Receipts' "Record
+     incoming stock. Stock Balance updates automatically — no separate
+     sync step." is the reference example; and (b) a caveat serious
+     enough that it must never be missed even by someone who doesn't
+     think to click an icon — AR Aging's payment-timing limitation and
+     My Sales Dashboard's attribution-gap warning are the two reference
+     examples, the latter additionally using the amber callout box
+     (rule 2) for extra visual weight given how consequential it is.
+
+   A page choosing between these two for a NEW scope fact defaults to
+   InfoPopover; permanent caption is the deliberate exception, not a
+   coin flip. Pages that picked one arbitrarily (documented in the
+   2026-08-31 audit) get reconciled to this rule when their turn comes —
+   this entry is the rule they get reconciled against, not a
+   retroactive rewrite of history.
+
+5. **Expand/collapse.** `CollapsibleMonthGroup`
+   (`src/components/ui/collapsible-month-group.tsx`) is the only
+   sanctioned expand/collapse component. For a month-based grouping,
+   use it as-is. For a non-time-based grouping, use the SAME component
+   under its existing name rather than inventing a new one — Stock
+   Balance's `section_group` reuse is the reference example (a
+   deliberate, self-commented repurposing, not a violation of this
+   rule). If its generic props ever genuinely stop fitting a new
+   grouping shape, rename/generalize that ONE component rather than
+   hand-rolling a second toggle-plus-local-state implementation next to
+   it. Authorization Center's `GroupCard` and Shop Floor Control's two
+   hand-rolled toggles (Machine Utilisation, Operator Update) are the
+   known violations to reconcile when their turn comes.
+
 ## Implemented design decision — Die Cutter to Folder Gluer scheduling
 
 Originally scoped to Production Layout Builder's scheduling engine
