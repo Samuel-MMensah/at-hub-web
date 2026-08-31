@@ -217,6 +217,14 @@ async function getKpis() {
   const collections = deptPerformanceRows.reduce((sum, row) => sum + Number(row.deposit_amount ?? 0), 0);
   const outstanding = totalRevenue - collections;
 
+  // Press/Garment value (2026-08-31 KPI restructure) — same `orders` array
+  // already fetched for the counts above (3-status Active scope), just
+  // reduced to a contract-value sum per department. No new query.
+  const pressOrderRows = orders.filter((row) => !isGarment(row));
+  const garmentOrderRows = orders.filter(isGarment);
+  const pressOrdersValue = pressOrderRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+  const garmentOrdersValue = garmentOrderRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+
   return {
     activeOrdersCount: nunique(orders.map((row) => row.job_order_no)),
     activeOrdersValue,
@@ -225,8 +233,10 @@ async function getKpis() {
     totalRevenue,
     collections,
     outstanding,
-    pressOrders: nunique(orders.filter((row) => !isGarment(row)).map((row) => row.job_order_no)),
-    garmentOrders: nunique(orders.filter(isGarment).map((row) => row.job_order_no)),
+    pressOrders: nunique(pressOrderRows.map((row) => row.job_order_no)),
+    pressOrdersValue,
+    garmentOrders: nunique(garmentOrderRows.map((row) => row.job_order_no)),
+    garmentOrdersValue,
     pendingApprovals: pendingRes.count ?? 0,
     orders,
     jobs: jobs as CapacityJobRow[],
@@ -247,7 +257,9 @@ export default async function CommandCenterPage() {
     collections,
     outstanding,
     pressOrders,
+    pressOrdersValue,
     garmentOrders,
+    garmentOrdersValue,
     pendingApprovals,
     orders,
     jobs,
@@ -287,72 +299,103 @@ export default async function CommandCenterPage() {
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <MetricCard
-          label={
-            <>
-              Active Orders
-              <InfoPopover>
-                <p>
-                  Counts only Approved, In Production, and At Warehouse orders — completed/
-                  delivered orders are excluded, which is why this total is smaller than
-                  Departmental Performance below.
-                </p>
-              </InfoPopover>
-            </>
-          }
-          value={activeOrdersCount}
-          subValue={money(activeOrdersValue)}
-        />
-        <MetricCard
-          label={
-            <>
-              WIP
-              <InfoPopover>
-                <p>
-                  Orders currently In Production only — does not include Approved (not yet
-                  started) or At Warehouse (production finished).
-                </p>
-              </InfoPopover>
-            </>
-          }
-          value={wipCount}
-          subValue={money(wipValue)}
-          accentColor="#0369a1"
-        />
-        <MetricCard
-          label={
-            <>
-              Collections
-              <InfoPopover>
-                <p>
-                  Includes deposits recorded at order-raise time AND payments recorded later
-                  through Invoice Entry for linked invoices — combined correctly, not
-                  double-counted.
-                </p>
-              </InfoPopover>
-            </>
-          }
-          value={money(collections)}
-          accentColor="#10b981"
-        />
-        <MetricCard
-          label={
-            <>
-              Outstanding Receivables
-              <InfoPopover>
-                <p>Total Revenue minus Collections.</p>
-              </InfoPopover>
-            </>
-          }
-          value={money(outstanding)}
-          accentColor="#ef4444"
-        />
+      {/* Three labeled groups (2026-08-31 restructure) — same 2-column grid
+          in every group so tile edges align across all three rows; only
+          the label above each distinguishes the grouping. */}
+      <div className="mt-4">
+        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
+          Order Pipeline
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <MetricCard
+            label={
+              <>
+                Active Orders
+                <InfoPopover>
+                  <p>
+                    Counts only Approved, In Production, and At Warehouse orders — completed/
+                    delivered orders are excluded, which is why this total is smaller than
+                    Departmental Performance below.
+                  </p>
+                </InfoPopover>
+              </>
+            }
+            value={activeOrdersCount}
+            subValue={money(activeOrdersValue)}
+          />
+          <MetricCard
+            label={
+              <>
+                WIP
+                <InfoPopover>
+                  <p>
+                    Orders currently In Production only — does not include Approved (not yet
+                    started) or At Warehouse (production finished).
+                  </p>
+                </InfoPopover>
+              </>
+            }
+            value={wipCount}
+            subValue={money(wipValue)}
+            accentColor="#0369a1"
+          />
+        </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <MetricCard label="Press Orders" value={pressOrders} accentColor="#0369a1" />
-        <MetricCard label="Garment Orders" value={garmentOrders} accentColor="#d97706" />
+      <div className="mt-4">
+        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
+          By Department
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <MetricCard
+            label="Press Orders"
+            value={pressOrders}
+            subValue={money(pressOrdersValue)}
+            accentColor="#0369a1"
+          />
+          <MetricCard
+            label="Garment Orders"
+            value={garmentOrders}
+            subValue={money(garmentOrdersValue)}
+            accentColor="#d97706"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
+          Financials
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <MetricCard
+            label={
+              <>
+                Collections
+                <InfoPopover>
+                  <p>
+                    Includes deposits recorded at order-raise time AND payments recorded later
+                    through Invoice Entry for linked invoices — combined correctly, not
+                    double-counted.
+                  </p>
+                </InfoPopover>
+              </>
+            }
+            value={money(collections)}
+            accentColor="#10b981"
+          />
+          <MetricCard
+            label={
+              <>
+                Outstanding Receivables
+                <InfoPopover>
+                  <p>Total Revenue minus Collections.</p>
+                </InfoPopover>
+              </>
+            }
+            value={money(outstanding)}
+            accentColor="#ef4444"
+          />
+        </div>
       </div>
 
       <TrendCharts rows={trendRows} />
