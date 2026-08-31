@@ -283,7 +283,10 @@ export default async function CommandCenterPage() {
       <div className="mb-2 text-lg font-bold text-at-navy-soft">Command Center</div>
 
       {/* Total Revenue — the visual anchor of the KPI section, full-width
-          and deliberately larger than the row below it. */}
+          and still deliberately the largest number on the page, but
+          density-passed (2026-08-31) to roughly half its prior height:
+          dense padding + a 2rem ceiling instead of 2.75rem, rather than
+          the oversized hero treatment it had before. */}
       <div className="grid grid-cols-1">
         <MetricCard
           label={
@@ -295,18 +298,21 @@ export default async function CommandCenterPage() {
             </>
           }
           value={money(totalRevenue)}
-          valueClassName="text-[2.75rem]"
+          valueClassName="text-[2rem]"
+          dense
         />
       </div>
 
-      {/* Three labeled groups (2026-08-31 restructure) — same 2-column grid
-          in every group so tile edges align across all three rows; only
-          the label above each distinguishes the grouping. */}
-      <div className="mt-4">
-        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
+      {/* Three labeled groups (2026-08-31 restructure; density-passed the
+          same day) — same 2-column grid in every group so tile edges align
+          across all three rows; only the label above each distinguishes
+          the grouping. Tighter mt/gap and dense tiles read as one
+          scannable block rather than three separately-scrolled sections. */}
+      <div className="mt-3">
+        <div className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
           Order Pipeline
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <MetricCard
             label={
               <>
@@ -322,6 +328,7 @@ export default async function CommandCenterPage() {
             }
             value={activeOrdersCount}
             subValue={money(activeOrdersValue)}
+            dense
           />
           <MetricCard
             label={
@@ -338,35 +345,38 @@ export default async function CommandCenterPage() {
             value={wipCount}
             subValue={money(wipValue)}
             accentColor="#0369a1"
+            dense
           />
         </div>
       </div>
 
-      <div className="mt-4">
-        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
+      <div className="mt-3">
+        <div className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
           By Department
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <MetricCard
             label="Press Orders"
             value={pressOrders}
             subValue={money(pressOrdersValue)}
             accentColor="#0369a1"
+            dense
           />
           <MetricCard
             label="Garment Orders"
             value={garmentOrders}
             subValue={money(garmentOrdersValue)}
             accentColor="#d97706"
+            dense
           />
         </div>
       </div>
 
-      <div className="mt-4">
-        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
+      <div className="mt-3">
+        <div className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
           Financials
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <MetricCard
             label={
               <>
@@ -382,6 +392,7 @@ export default async function CommandCenterPage() {
             }
             value={money(collections)}
             accentColor="#10b981"
+            dense
           />
           <MetricCard
             label={
@@ -394,6 +405,7 @@ export default async function CommandCenterPage() {
             }
             value={money(outstanding)}
             accentColor="#ef4444"
+            dense
           />
         </div>
       </div>
