@@ -86,7 +86,7 @@ export function ProductionBoardClient({ orders, lockedDept }: ProductionBoardCli
       {filtered.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
           No approved {deptChoice === "All Departments" ? "" : `${deptChoice.toLowerCase()} `}
-          orders waiting.
+          orders yet.
         </div>
       ) : (
         <div className="flex flex-col gap-4">

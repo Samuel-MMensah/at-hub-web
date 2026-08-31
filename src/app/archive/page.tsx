@@ -62,7 +62,7 @@ export default async function ArchivePage() {
         <RestrictedAccess message="The Approved Orders Archive is accessible only to authorized managers and administrators. Your submitted orders are visible in the My Order Tracker module." />
       ) : orders.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No approved job contracts currently sitting in archives.
+          No approved orders yet.
         </div>
       ) : (
         <div>

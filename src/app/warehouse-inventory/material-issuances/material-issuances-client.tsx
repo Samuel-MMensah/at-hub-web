@@ -173,7 +173,7 @@ export function MaterialIssuancesClient({
 
       {issuances.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No issuances recorded yet.
+          No issuances yet.
         </div>
       ) : (
         monthGroups.map((month) => (

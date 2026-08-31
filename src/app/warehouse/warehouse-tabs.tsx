@@ -110,7 +110,7 @@ function ReceivingTab({
   if (totalOrders === 0) {
     return (
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-        Nothing waiting at the warehouse right now.
+        No orders yet.
       </div>
     );
   }

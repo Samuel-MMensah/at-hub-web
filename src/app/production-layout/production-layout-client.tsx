@@ -121,8 +121,7 @@ export function ProductionLayoutClient({ orders }: { orders: ApprovedOrderRow[] 
   if (orders.length === 0) {
     return (
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-        No approved orders available for production scheduling. Authorize orders in the
-        Authorization Center first.
+        No approved orders yet. Authorize orders in the Authorization Center first.
       </div>
     );
   }

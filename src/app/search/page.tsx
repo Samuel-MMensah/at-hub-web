@@ -107,8 +107,8 @@ export default async function SearchPage({
           Enter a search term in the sidebar search bar.
         </div>
       ) : results.length === 0 ? (
-        <div className="rounded-at-lg border border-at-warning bg-at-warning-bg p-6 text-sm text-at-warning-text shadow-at-sm">
-          No orders found matching <strong>{query}</strong>.
+        <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
+          No orders match &quot;{query}&quot;.
         </div>
       ) : (
         <div>

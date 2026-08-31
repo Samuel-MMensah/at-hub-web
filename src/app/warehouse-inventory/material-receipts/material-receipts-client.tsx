@@ -150,7 +150,7 @@ export function MaterialReceiptsClient({
 
       {receipts.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No receipts recorded yet.
+          No receipts yet.
         </div>
       ) : (
         monthGroups.map((month) => (

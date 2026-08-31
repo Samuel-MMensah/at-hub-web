@@ -284,7 +284,7 @@ export function SamplesClient({ samples }: { samples: SampleRow[] }) {
 
       {samples.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No samples on record yet.
+          No samples yet.
         </div>
       ) : (
         monthGroups.map((month) => (

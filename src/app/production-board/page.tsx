@@ -41,7 +41,7 @@ export default async function ProductionBoardPage() {
 
       {orders.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No approved orders waiting to start production, and nothing currently in production.
+          No orders yet.
         </div>
       ) : (
         <ProductionBoardClient orders={orders} lockedDept={lockedDept} />

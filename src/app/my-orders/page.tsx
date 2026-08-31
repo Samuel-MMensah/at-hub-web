@@ -67,8 +67,7 @@ export default async function MyOrdersPage() {
         <RestrictedAccess message="My Order Tracker is reserved for Front Desk staff, Operations, and administrators." />
       ) : orders.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No job orders found under your account. Use &quot;Raise Job Order&quot; to
-          submit your first contract.
+          No job orders yet. Use &quot;Raise Job Order&quot; to submit your first one.
         </div>
       ) : (
         <OrderTrackerClient orders={orders} jobs={jobs} />

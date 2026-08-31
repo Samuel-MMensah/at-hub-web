@@ -252,7 +252,7 @@ export function ShopFloorClient({ pipeline, jobs }: ShopFloorClientProps) {
           colorMap={HEALTH_COLORS}
           nowLineColor="#0f172a"
           legendTitle="Health"
-          emptyMessage="No orders currently in production. Use the Production Layout Builder to schedule an approved order."
+          emptyMessage="No orders in production yet."
         />
       </div>
 
@@ -275,7 +275,7 @@ export function ShopFloorClient({ pipeline, jobs }: ShopFloorClientProps) {
             colorMap={STAGE_STATUS_COLORS}
             nowLineColor="#0f172a"
             legendTitle="Stage Status"
-            emptyMessage="No stage-level schedule found for this order yet."
+            emptyMessage="No stage-level schedule yet."
           />
 
           <OperatorUpdatePanel stageOptions={stageOptions} />
@@ -289,14 +289,14 @@ export function ShopFloorClient({ pipeline, jobs }: ShopFloorClientProps) {
         defaultExpanded={false}
       >
         {machineRows.length === 0 ? (
-          <div className="text-sm text-at-slate">Nothing scheduled.</div>
+          <div className="text-sm text-at-slate">No schedule yet.</div>
         ) : (
           <GanttChart
             rows={machineRows}
             colorMap={RUN_STATUS_COLORS}
             nowLineColor="#ef4444"
             legendTitle="Run Status"
-            emptyMessage="Nothing scheduled."
+            emptyMessage="No schedule yet."
           />
         )}
       </CollapsibleMonthGroup>

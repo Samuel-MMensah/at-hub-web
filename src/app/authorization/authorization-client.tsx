@@ -145,7 +145,7 @@ export function AuthorizationClient({ orders }: AuthorizationClientProps) {
   if (orders.length === 0) {
     return (
       <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-        No pending job contracts requiring authorization.
+        No pending orders yet.
       </div>
     );
   }
@@ -185,8 +185,7 @@ export function AuthorizationClient({ orders }: AuthorizationClientProps) {
 
       {sorted.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No orders match your search or filter. Clear the filters above to see all pending
-          contracts.
+          No orders match your search or filter.
         </div>
       ) : (
         <>

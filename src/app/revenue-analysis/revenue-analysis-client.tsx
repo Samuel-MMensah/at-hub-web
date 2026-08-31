@@ -867,7 +867,7 @@ export function RevenueAnalysisClient({ invoices }: { invoices: InvoiceRow[] }) 
 
       {table.columns.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No invoices recorded yet.
+          No invoices yet.
         </div>
       ) : (
         <>

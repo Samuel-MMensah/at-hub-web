@@ -182,7 +182,7 @@ export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
 
       {current.rows.length === 0 ? (
         <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No orders with status &apos;{current.fullLabel}&apos;.
+          No {current.fullLabel} orders.
         </div>
       ) : (
         <div>
@@ -201,7 +201,7 @@ export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
 
           {filteredRows.length === 0 ? (
             <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-              No &apos;{current.fullLabel}&apos; orders match your search.
+              No {current.fullLabel} orders match your search.
             </div>
           ) : (
             <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
