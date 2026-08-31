@@ -1885,43 +1885,59 @@ so the dozen-plus fixes that follow don't each independently re-decide
 these — every future page (new or fixed) follows the rule below, not
 whichever nearby example it happens to copy from.
 
-1. **Pill toggle sizing.** Every Weekly/Monthly, status-filter,
-   category-filter, or view-switch pill toggle uses `rounded-full
-   border px-4 py-1.5 text-sm font-semibold` (the active/inactive color
-   classes already agree everywhere: `border-at-navy bg-at-navy
-   text-at-white` active, `border-at-border bg-at-white text-at-slate
-   hover:border-at-accent` inactive). This is Command Center's Trend/
-   Departmental Performance toggle and Revenue Analysis's Weekly/Monthly
-   toggle — the more recently built convention, chosen over the smaller
-   `px-3 py-1 text-xs` variant currently on My Order Tracker, Category
-   Report, Samples, and Audit Log. Those four get migrated to the larger
-   size when their turn comes; nothing new should ever be built at the
-   smaller size again.
+**Status re-checked 2026-08-31 (fresh sweep, re-verified against actual
+code, not assumed from this section's original text)**: rules 1, 2, 3,
+and 5 are now fully resolved app-wide — the "still needs migrating"
+lists originally written below them were stale by the time of the
+sweep (the migration work had already happened without this section
+being updated to say so). Rule 4 has three remaining items. Each rule's
+own status is called out inline below.
 
-2. **Amber callout / warning box.** `--at-warning-bg` (`#fef7e0`) and
-   `--at-warning-text` (`#b06000`) (`src/app/globals.css`) are the ONLY
-   sanctioned colors for a warning/callout box, full stop. Raw Tailwind
-   `bg-amber-50`/`text-amber-800`/`border-amber-300` (and any gradient
-   variant, e.g. Archive's Revision Lifecycle Notice) is deprecated
-   everywhere it currently appears (Command Center's uncategorized-
-   orders warning, Raise Job Order's duplicate-client warning, Material
-   Receipts'/Material Issuances' `EditedBadge`, Archive). These are NOT
-   the same shade as Tailwind's stock `amber-*` scale — a find/replace
-   of class names alone would silently shift the actual color, so each
-   fix needs the real token classes, not a renamed equivalent.
+1. **Pill toggle sizing — fully resolved app-wide.** Every Weekly/
+   Monthly, status-filter, category-filter, or view-switch pill toggle
+   uses `rounded-full border px-4 py-1.5 text-sm font-semibold` (the
+   active/inactive color classes already agree everywhere: `border-at-
+   navy bg-at-navy text-at-white` active, `border-at-border bg-at-white
+   text-at-slate hover:border-at-accent` inactive). My Order Tracker,
+   Category Report, Samples, and Audit Log — the four pages originally
+   named here as still on the deprecated smaller `px-3 py-1 text-xs`
+   variant — are all confirmed migrated to the size above. Nothing new
+   should ever be built at the smaller size again.
 
-3. **Money formatting.** Tight `"GH₵1,234.00"` (no space after the
-   currency symbol) is the app-wide standard, already the convention on
-   the Finance/Revenue family (Invoice Entry, Category Report,
-   Uninvoiced Orders, Revenue Analysis) — chosen over the spaced
-   `"GH₵ 1,234.00"` variant on Raise Job Order, Authorization Center, My
-   Order Tracker, and Dispatch, since tight is already standard on the
-   pages that handle the most financial detail. Those four get migrated
-   to tight when their turn comes.
+2. **Amber callout / warning box — fully resolved app-wide.**
+   `--at-warning-bg` (`#fef7e0`) and `--at-warning-text` (`#b06000`)
+   (`src/app/globals.css`) are the ONLY sanctioned colors for a
+   warning/callout box, full stop. Raw Tailwind `bg-amber-50`/
+   `text-amber-800`/`border-amber-300` (and any gradient variant) is
+   deprecated. All four occurrences originally named here are confirmed
+   fixed: Command Center's uncategorized-orders warning, Material
+   Receipts'/Material Issuances' `EditedBadge`, Archive's Revision
+   Lifecycle Notice, and Raise Job Order's duplicate-client warning
+   (`raise-order-client.tsx:377`) all use the real token classes now.
+   (Correction, 2026-08-31: an earlier pass of this section had
+   misattributed Raise Job Order's remaining item to line 2137, a
+   Garment-cart-item card — re-checked directly, that line and its
+   Press-cart sibling around line 2237 are amber-accented list-item
+   cards, not warning boxes, and were never in this rule's scope. The
+   genuine duplicate-client warning, at line 377, was already correct.)
+   Raw `amber-*` still appears in exactly two other, deliberately
+   out-of-scope places — Authorization Center's and My Order Tracker's
+   Garment/Press department-color badges (`authorization-client.tsx`,
+   `order-tracker-client.tsx`) — which is a color-coding scheme, not a
+   warning/callout box, and isn't governed by this rule.
 
-4. **Scope disclosure: InfoPopover vs. permanent caption.** These are
-   NOT interchangeable choices — each has a distinct, now-documented
-   job:
+3. **Money formatting — fully resolved app-wide.** Tight
+   `"GH₵1,234.00"` (no space after the currency symbol) is the app-wide
+   standard. Raise Job Order, Authorization Center, My Order Tracker,
+   and Dispatch — the four pages originally named here as still on the
+   spaced `"GH₵ 1,234.00"` variant — every `money()` helper across the
+   app was grepped directly and all of them are tight, confirming this
+   migration is complete everywhere, not just on the Finance/Revenue
+   family it started on.
+
+4. **Scope disclosure: InfoPopover vs. permanent caption — three
+   remaining items.** These are NOT interchangeable choices — each has
+   a distinct, now-documented job:
    - **InfoPopover** (the small "(i)" hover/click icon — exported from
      `src/app/command-center/charts.tsx`) is the standard for a "what's
      included/excluded" scope fact: which statuses, which date window,
@@ -1944,12 +1960,26 @@ whichever nearby example it happens to copy from.
 
    A page choosing between these two for a NEW scope fact defaults to
    InfoPopover; permanent caption is the deliberate exception, not a
-   coin flip. Pages that picked one arbitrarily (documented in the
-   2026-08-31 audit) get reconciled to this rule when their turn comes —
-   this entry is the rule they get reconciled against, not a
-   retroactive rewrite of history.
+   coin flip. Three items confirmed still open by the 2026-08-31 fresh
+   sweep, none incidentally fixed by anything since:
+   - **Category Report** (`page.tsx:38-41`) and **Uninvoiced Orders**
+     (`page.tsx:54-56`) each use a permanent caption — self-commented
+     "same convention as AR Aging" — for what both actually state is a
+     routine "which statuses/date-window this is drawn from" fact, not
+     a caveat serious enough to justify exception (b). Both should
+     reconcile to InfoPopover when their turn comes; the AR-Aging
+     analogy in their own comments doesn't hold up since neither
+     carries AR Aging's real financial-risk-if-missed severity.
+   - **Shop Floor Control's 72-hour job window and Audit Log's 8-status
+     scope are undisclosed on-screen entirely** — not a caption-type
+     mismatch like the two above, but a missing disclosure: no
+     InfoPopover, no caption, nothing. `shop-floor/page.tsx`'s window
+     comment and `audit-log/page.tsx`'s `AUDIT_LOG_STATUSES` are only
+     ever explained in code comments a user never sees. Was already
+     named as a deliberately-deferred gap before this sweep; the sweep
+     re-confirmed it's still accurate, not incidentally addressed.
 
-5. **Expand/collapse.** `CollapsibleMonthGroup`
+5. **Expand/collapse — fully resolved app-wide.** `CollapsibleMonthGroup`
    (`src/components/ui/collapsible-month-group.tsx`) is the only
    sanctioned expand/collapse component. For a month-based grouping,
    use it as-is. For a non-time-based grouping, use the SAME component
@@ -1960,8 +1990,12 @@ whichever nearby example it happens to copy from.
    grouping shape, rename/generalize that ONE component rather than
    hand-rolling a second toggle-plus-local-state implementation next to
    it. Authorization Center's `GroupCard` and Shop Floor Control's two
-   hand-rolled toggles (Machine Utilisation, Operator Update) are the
-   known violations to reconcile when their turn comes.
+   hand-rolled toggles (Machine Utilisation, Operator Update) —
+   originally named here as known violations — are confirmed reconciled:
+   all three now wrap `CollapsibleMonthGroup` rather than hand-rolling
+   their own toggle state. A broader grep across all of `src/` for any
+   OTHER local expand/collapse `useState` turned up none outside this
+   one component, confirming there's no other violation left unnamed.
 
 ## Implemented design decision — Die Cutter to Folder Gluer scheduling
 

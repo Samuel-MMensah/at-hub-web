@@ -191,7 +191,7 @@ export function ArchiveClient({ orders }: { orders: ArchiveOrderRow[] }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Customer · Order No · Sales Rep · Auth By…"
-              className="flex-1 rounded-at border border-at-border bg-at-white px-4 py-2.5 text-sm text-at-navy outline-none focus:border-at-accent sm:max-w-sm"
+              className="flex-1 rounded-at border border-at-border bg-at-white px-4 py-2.5 text-sm text-at-navy outline-none focus:border-at-accent"
             />
             <Button onClick={() => downloadCsv(current.fullLabel, filteredRows)} className="whitespace-nowrap">
               Export {current.fullLabel} CSV
