@@ -100,7 +100,7 @@ function EditedBadge({ editedBy, editedAt }: { editedBy: string | null; editedAt
   return (
     <span
       title={`Edited by ${editedBy ?? "unknown"} on ${d.toLocaleString()}`}
-      className="ml-2 inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-800"
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-at-warning-bg px-2 py-0.5 text-[0.65rem] font-semibold text-at-warning-text"
     >
       edited {short}
     </span>

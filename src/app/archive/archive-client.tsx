@@ -494,11 +494,11 @@ function RevisionForm({ order, garment }: { order: ArchiveOrderRow; garment: boo
     <div className="mt-4 border-t border-at-border pt-4">
       <div className="mb-3 text-base font-semibold text-at-navy">Master Order Revision Interface</div>
 
-      <div className="mb-4 rounded-lg border border-amber-300 border-l-4 border-l-amber-600 bg-gradient-to-br from-amber-50 to-amber-100 px-4 py-3">
-        <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-amber-800">
+      <div className="mb-4 rounded-lg border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
+        <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
           ⚠️ Revision Lifecycle Notice
         </div>
-        <div className="text-sm text-amber-900">
+        <div className="text-sm text-at-warning-text">
           Saving changes will move this order from <strong>Approved</strong> →{" "}
           <strong>Pending Revision Approval</strong> and re-route it to the Authorization Center
           for fresh management sign-off. The original Job Order No. and Batch Reference are

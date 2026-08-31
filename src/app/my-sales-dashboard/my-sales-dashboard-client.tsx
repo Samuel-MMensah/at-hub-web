@@ -45,7 +45,7 @@ interface ClientBreakdownRow {
 }
 
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // `date` is a plain Postgres DATE, not timestamptz — same reasoning

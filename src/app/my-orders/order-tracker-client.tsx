@@ -71,16 +71,13 @@ function statusStyle(status: string) {
   return STATUS_MAP[status] ?? { color: "#64748b", bg: "#f1f5f9", label: status.toUpperCase() };
 }
 
-// Top-level KPI / personal-analytics cards use no-space "GH₵1,234.00".
-function moneyTight(n: number): string {
-  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-}
-
-// Order card tiles / batch header / approved-tab summary use a space:
-// "GH₵ 1,234.00" — matches the two distinct f-string conventions in the
-// original file exactly (compare line ~41 vs line ~206).
-function moneySpaced(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+// Tight "GH₵1,234.00" — app-wide standard (MIGRATION_STATUS.md's UI
+// Conventions, rule 3). This file originally split money formatting into
+// moneyTight (KPI cards) and moneySpaced (order tiles/batch header/
+// approved-tab summary) to match two distinct f-string conventions in
+// the source; consolidated to one tight function everywhere, 2026-08-31.
+function money(n: number): string {
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function groupKey(row: JobOrderRow): string {
@@ -234,7 +231,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
         />
         <MetricCard
           label="Total Contract Value"
-          value={moneyTight(totalContractValue)}
+          value={money(totalContractValue)}
           accentColor="#0369a1"
           valueClassName="text-[1.35rem]"
         />
@@ -249,7 +246,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
         />
         <MetricCard
           label="My Avg Order Value"
-          value={moneyTight(avgOrderValue)}
+          value={money(avgOrderValue)}
           valueClassName="text-[1.35rem]"
         />
         <MetricCard
@@ -275,7 +272,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
                 key={status}
                 type="button"
                 onClick={() => toggleStatus(status)}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
                   active
                     ? "border-at-navy bg-at-navy text-at-white"
                     : "border-at-border bg-at-white text-at-slate hover:border-at-accent"
@@ -318,11 +315,11 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
           <>
             <OrderTab orders={pendingOrders} jobs={jobs} isFiltering={isFiltering} />
             {pendingOrders.length > 0 && (
-              <div className="mt-2 rounded-at border border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 p-4">
-                <div className="mb-1 text-xs font-bold uppercase tracking-wide text-amber-800">
+              <div className="mt-2 rounded-at border border-at-warning bg-at-warning-bg p-4">
+                <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-warning-text">
                   ℹ️ Awaiting Management Decision
                 </div>
-                <div className="text-sm text-amber-900">
+                <div className="text-sm text-at-warning-text">
                   These orders are currently in the authorization queue. You will see them move
                   to Approved or Rejected once management reviews them in the Authorization
                   Center.
@@ -348,7 +345,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
                     Total Contract Value
                   </div>
                   <div className="text-lg font-extrabold text-emerald-400">
-                    {moneySpaced(pipelineTotal)}
+                    {money(pipelineTotal)}
                   </div>
                 </div>
                 <div>
@@ -356,7 +353,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
                     Deposits Collected
                   </div>
                   <div className="text-lg font-extrabold text-sky-300">
-                    {moneySpaced(pipelineDeposit)}
+                    {money(pipelineDeposit)}
                   </div>
                 </div>
                 <div>
@@ -364,7 +361,7 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
                     Outstanding Balance
                   </div>
                   <div className="text-lg font-extrabold text-red-300">
-                    {moneySpaced(pipelineTotal - pipelineDeposit)}
+                    {money(pipelineTotal - pipelineDeposit)}
                   </div>
                 </div>
               </div>
@@ -526,7 +523,7 @@ function BatchBlock({ batch, jobs }: { batch: BatchGroup; jobs: JobRow[] }) {
               Batch Value
             </div>
             <div className="text-lg font-extrabold text-at-success">
-              {moneySpaced(group.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0))}
+              {money(group.reduce((sum, o) => sum + Number(o.total_amount ?? 0), 0))}
             </div>
           </div>
         </div>
@@ -538,7 +535,7 @@ function BatchBlock({ batch, jobs }: { batch: BatchGroup; jobs: JobRow[] }) {
             <div className="mb-1.5 pl-1 text-[0.68rem] font-bold uppercase tracking-wide text-at-slate">
               Line Item {itemIdx + 1} of {group.length}
               {order.status?.trim() === "Pending Revision Approval" && (
-                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6rem] font-bold text-amber-800">
+                <span className="ml-2 rounded bg-at-warning-bg px-1.5 py-0.5 text-[0.6rem] font-bold text-at-warning-text">
                   REVISED
                 </span>
               )}
@@ -621,11 +618,11 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <InfoTile label="Contract Value" value={moneySpaced(total)} />
-        <InfoTile label="Deposit Paid" value={moneySpaced(deposit)} valueColor="#059669" />
+        <InfoTile label="Contract Value" value={money(total)} />
+        <InfoTile label="Deposit Paid" value={money(deposit)} valueColor="#059669" />
         <InfoTile
           label="Balance Outstanding"
-          value={moneySpaced(balance)}
+          value={money(balance)}
           valueColor={balance > 0 ? "#ef4444" : "#10b981"}
         />
         <InfoTile label="Print Qty" value={qty.toLocaleString()} />
@@ -676,7 +673,7 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
       )}
 
       {isRevised && (
-        <div className="mb-4 rounded-at border border-amber-300 bg-gradient-to-br from-amber-50 to-amber-100 px-4 py-2.5 text-sm text-amber-900">
+        <div className="mb-4 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-sm text-at-warning-text">
           <strong>⚠️ Revised Contract:</strong> This order was edited after initial approval and
           is now awaiting fresh management sign-off. No action is required from you at this
           stage.

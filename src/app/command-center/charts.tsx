@@ -695,7 +695,7 @@ function CategoryView({
       </div>
 
       {hasUncategorized && (
-        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
+        <div className="mt-3 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-xs font-semibold text-at-warning-text">
           ⚠ {uncategorized.jobs.size} order(s) have a print type not covered by the category
           mapping — they are flagged in the browser console (orderCategory) and NOT included in the
           six categories above, so this section would no longer sum to the department totals until a

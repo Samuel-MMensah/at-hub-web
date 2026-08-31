@@ -39,7 +39,7 @@ function sanitizeString(input: string): string {
 }
 
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Matches datetime.now().date() as a local "YYYY-MM-DD" default for the
@@ -374,16 +374,16 @@ function ClientIdentitySection({
       )}
 
       {duplicate && (
-        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mt-3 rounded-at border border-at-warning bg-at-warning-bg px-4 py-3 text-sm text-at-warning-text">
           <div className="font-bold">A client named &ldquo;{duplicate.name}&rdquo; already exists.</div>
-          <div className="mt-1 text-xs text-amber-800">
+          <div className="mt-1 text-xs text-at-warning-text">
             Phone: {duplicate.phone || "—"} &nbsp;·&nbsp; Email: {duplicate.email || "—"}
           </div>
           <div className="mt-2 flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => handleSelect(String(duplicate.id))}>
               Use this existing client instead
             </Button>
-            <span className="text-xs text-amber-800">
+            <span className="text-xs text-at-warning-text">
               or adjust the name above if this is genuinely a different client.
             </span>
           </div>
@@ -1324,7 +1324,7 @@ function PressCart({
             <SummaryTile label="Combined Contract Value" value={money(cartTotal)} valueColor="#34d399" />
             <SummaryTile label="Total Deposit Collected" value={money(cartDeposit)} valueColor="#7dd3fc" />
             {cartHasBalance && (
-              <div className="rounded-full border border-amber-300 bg-amber-100/10 px-3 py-1 text-xs font-bold text-amber-300">
+              <div className="rounded-full border border-at-warning bg-at-warning/10 px-3 py-1 text-xs font-bold text-at-warning">
                 ⚠️ Outstanding balance in this batch
               </div>
             )}
@@ -1340,7 +1340,7 @@ function PressCart({
           {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
           {submitWarnings.length > 0 &&
             submitWarnings.map((w, i) => (
-              <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+              <div key={i} className="mt-3 text-sm font-semibold text-at-warning-text">
                 {w}
               </div>
             ))}
@@ -1814,11 +1814,11 @@ function GarmentCart({
   return (
     <div>
       {cartItems.length > 0 && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100 px-5 py-3.5">
-          <div className="text-sm font-bold text-amber-900">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 px-5 py-3.5">
+          <div className="text-sm font-bold text-green-800">
             {cartItems.length} garment item(s) in cart for {cartClientName || "—"}
           </div>
-          <div className="text-xs text-amber-700">
+          <div className="text-xs text-green-700">
             Add more items below, or scroll down to submit the batch
           </div>
         </div>
@@ -2179,7 +2179,7 @@ function GarmentCart({
               valueColor="#fcd34d"
             />
             {cartHasBalance && (
-              <div className="rounded-full border border-amber-300 bg-amber-100/10 px-3 py-1 text-xs font-bold text-amber-200">
+              <div className="rounded-full border border-at-warning bg-at-warning/10 px-3 py-1 text-xs font-bold text-at-warning">
                 ⚠️ Outstanding balance in this batch
               </div>
             )}
@@ -2195,7 +2195,7 @@ function GarmentCart({
           {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
           {submitWarnings.length > 0 &&
             submitWarnings.map((w, i) => (
-              <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+              <div key={i} className="mt-3 text-sm font-semibold text-at-warning-text">
                 {w}
               </div>
             ))}
@@ -2833,7 +2833,7 @@ function PressResubmitForm({
         )}
         {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
         {submitWarnings.map((w, i) => (
-          <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+          <div key={i} className="mt-3 text-sm font-semibold text-at-warning-text">
             {w}
           </div>
         ))}
@@ -3283,7 +3283,7 @@ function GarmentResubmitForm({
         )}
         {submitError && <div className="mt-3 text-sm font-semibold text-red-600">{submitError}</div>}
         {submitWarnings.map((w, i) => (
-          <div key={i} className="mt-3 text-sm font-semibold text-amber-600">
+          <div key={i} className="mt-3 text-sm font-semibold text-at-warning-text">
             {w}
           </div>
         ))}

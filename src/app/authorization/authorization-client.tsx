@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { isGarment, type GarmentClassifiable } from "@/lib/is-garment";
 import { approveOrder, rejectOrder } from "./actions";
 
@@ -43,11 +44,11 @@ export interface PendingOrderRow extends GarmentClassifiable {
   created_at: string | null;
 }
 
-// Spaced "GH₵ 1,234.00" convention — matches every f-string in the
-// Authorization Center source (compare My Order Tracker, which mixes
-// spaced and tight conventions depending on which card is rendering).
+// Tight "GH₵1,234.00" — app-wide standard (MIGRATION_STATUS.md's UI
+// Conventions, rule 3), migrated 2026-08-31 from this file's original
+// spaced "GH₵ 1,234.00" convention.
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Same grouping convention as My Order Tracker's local groupKey — kept as
@@ -246,8 +247,6 @@ function PaginationBar({
 }
 
 function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey: string }) {
-  const [expanded, setExpanded] = useState(false);
-
   const first = group[0];
   const customer = first.customer_name || "—";
   const telephone = first.telephone_number || "—";
@@ -273,7 +272,7 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
         <div>
           <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-slate-400">
             CLIENT SUBMISSION — {badge} — {deptBadge}
-            {hasRevision && <span className="ml-2 text-amber-400">⚠️ REVISED</span>}
+            {hasRevision && <span className="ml-2 text-at-warning">⚠️ REVISED</span>}
           </div>
           <div className="text-[1.35rem] font-extrabold tracking-tight">{customer}</div>
           <div className="mt-0.5 text-sm text-slate-400">
@@ -289,13 +288,13 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
       </div>
 
       {hasRevision && (
-        <div className="mt-2 flex gap-3 rounded-lg border-2 border-amber-500 border-l-[6px] border-l-amber-600 bg-gradient-to-br from-amber-50 to-amber-100 px-5 py-3.5">
+        <div className="mt-2 flex gap-3 rounded-lg border-2 border-l-[6px] border-at-warning bg-at-warning-bg px-5 py-3.5">
           <div className="flex-shrink-0 text-2xl">⚠️</div>
           <div>
-            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-amber-800">
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-warning-text">
               Attention: Revised Contract
             </div>
-            <div className="text-sm leading-relaxed text-amber-900">
+            <div className="text-sm leading-relaxed text-at-warning-text">
               One or more line items in this submission were previously Approved and have since
               been modified by an administrator. Original Job Order references and Batch tracking
               IDs are preserved. Please review all amended specifications carefully before
@@ -305,29 +304,31 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="mt-2 flex w-full items-center gap-1.5 rounded-at border border-at-border bg-at-white px-4 py-2.5 text-left text-sm font-bold text-at-navy shadow-at-sm hover:border-at-accent"
-      >
-        <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>
-        📋 {itemCount} line item(s) — {customer}
-        {hasRevision && <span className="text-amber-600"> · ⚠️ includes REVISED items</span>}
-      </button>
-
-      {expanded && (
-        <div className="mt-3 flex flex-col gap-4">
-          {group.map((order, i) => (
-            <LineItemCard
-              key={order.id}
-              order={order}
-              position={i + 1}
-              total={itemCount}
-              isMulti={isMulti}
-            />
-          ))}
-        </div>
-      )}
+      <div className="mt-2">
+        <CollapsibleMonthGroup
+          monthLabel={
+            <>
+              📋 {customer}
+              {hasRevision && <span className="text-at-warning-text"> · ⚠️ includes REVISED items</span>}
+            </>
+          }
+          itemCount={itemCount}
+          itemLabel="line item(s)"
+          defaultExpanded={false}
+        >
+          <div className="flex flex-col gap-4">
+            {group.map((order, i) => (
+              <LineItemCard
+                key={order.id}
+                order={order}
+                position={i + 1}
+                total={itemCount}
+                isMulti={isMulti}
+              />
+            ))}
+          </div>
+        </CollapsibleMonthGroup>
+      </div>
     </div>
   );
 }
@@ -394,7 +395,7 @@ function LineItemCard({
         <div className="mb-3 flex flex-wrap items-center gap-2 text-[0.68rem] font-bold uppercase tracking-wide text-at-slate">
           LINE ITEM {position} OF {total}
           {isRevised && (
-            <span className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[0.6rem] font-bold text-amber-800">
+            <span className="rounded border border-at-warning bg-at-warning-bg px-1.5 py-0.5 text-[0.6rem] font-bold text-at-warning-text">
               REVISED
             </span>
           )}

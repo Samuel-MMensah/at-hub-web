@@ -74,15 +74,17 @@ function todayLocalDateStr(): string {
 }
 
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Order-selector label format uses 0 decimals, matching the source's
 // own f"{CURRENCY} {amount:,.0f}" exactly — distinct from the 2-decimal
 // money() used everywhere else (including the summary card's own
-// Contract Value tile just below it).
+// Contract Value tile just below it). Tight-currency prefix only
+// (MIGRATION_STATUS.md's UI Conventions, rule 3) — the 0-decimal
+// behavior itself is unrelated to that rule and stays as-is.
 function moneyWhole(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 export interface ApprovedOrderRow {

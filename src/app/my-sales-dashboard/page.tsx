@@ -87,7 +87,7 @@ export default async function MySalesDashboardPage() {
               callout-box style already used elsewhere for a "don't miss
               this" caveat (CategoryView's uncategorized-orders warning,
               command-center/charts.tsx) — not a new visual convention. */}
-          <div className="mb-4 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
+          <div className="mb-4 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-xs font-semibold text-at-warning-text">
             This only counts orders and invoices with your name recorded as Sales Rep. Sales Rep
             became a required field on 2026-08-30 — before that date, many orders and invoices
             were never tagged with any rep, so real work you brought in earlier may not appear

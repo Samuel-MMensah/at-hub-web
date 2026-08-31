@@ -166,7 +166,7 @@ function EditedBadge({ editedBy, editedAt }: { editedBy: string | null; editedAt
   return (
     <span
       title={`Edited by ${editedBy ?? "unknown"} on ${d.toLocaleString()}`}
-      className="ml-2 inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-semibold text-amber-800"
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-at-warning-bg px-2 py-0.5 text-[0.65rem] font-semibold text-at-warning-text"
     >
       edited {short}
     </span>
@@ -852,15 +852,15 @@ function InvoiceForm({
           changes drift the total away from what was actually paid. Save
           stays disabled (see canSubmit) until this is acknowledged. */}
       {hasExistingPayment && (
-        <div className="mb-4 rounded-lg border border-amber-300 border-l-4 border-l-amber-600 bg-gradient-to-br from-amber-50 to-amber-100 px-4 py-3">
-          <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-amber-800">
+        <div className="mb-4 rounded-lg border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
+          <div className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
             ⚠️ Payment Already Recorded
           </div>
-          <div className="mb-2 text-sm text-amber-900">
+          <div className="mb-2 text-sm text-at-warning-text">
             This invoice already has {money(round2(editingInvoice.payment))} recorded as paid. Changing the
             amount may make the payment inconsistent with the new total.
           </div>
-          <label className="flex items-center gap-2 text-sm text-amber-900">
+          <label className="flex items-center gap-2 text-sm text-at-warning-text">
             <input
               type="checkbox"
               checked={warningAcknowledged}

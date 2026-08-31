@@ -330,7 +330,7 @@ export function CategoryReportClient({
                   key={c}
                   type="button"
                   onClick={() => toggleCategory(c)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
                     active
                       ? "border-at-navy bg-at-navy text-at-white"
                       : "border-at-border bg-at-white text-at-slate hover:border-at-accent"

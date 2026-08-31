@@ -24,7 +24,7 @@ export interface DispatchOrderRow {
 }
 
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Same round2()/comparison-parity fix as recordInvoicePayment (Invoice
@@ -210,7 +210,7 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
       )}
 
       {notReady && (
-        <div className="mt-3 rounded-at border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800">
+        <div className="mt-3 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-sm font-semibold text-at-warning-text">
           Still in production — Finalize Dispatch unlocks once the production team marks this
           order sent to the warehouse.
         </div>

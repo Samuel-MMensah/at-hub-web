@@ -3,8 +3,18 @@
 import { useState } from "react";
 
 interface CollapsibleMonthGroupProps {
-  monthLabel: string;
-  itemCount: number;
+  // Widened from `string` to `React.ReactNode` (2026-08-31, UI
+  // Conventions rule 5) so a caller whose header needs inline styling
+  // (e.g. a colored warning span) can still use this ONE sanctioned
+  // expand/collapse component instead of hand-rolling a second one —
+  // every existing plain-string caller keeps working unchanged, since a
+  // string is itself a valid ReactNode.
+  monthLabel: React.ReactNode;
+  // Optional (2026-08-31, UI Conventions rule 5) — a form/settings panel
+  // (e.g. Shop Floor Control's Operator Update) has no countable "items"
+  // at all; omit both this and itemLabel rather than forcing an
+  // artificial count just to reuse this component.
+  itemCount?: number;
   itemLabel?: string;
   /** Whether this month should be expanded right now, computed fresh by
    * the caller on every render (current month, or a search/filter is
@@ -45,9 +55,11 @@ export function CollapsibleMonthGroup({
       >
         <span className="text-at-slate-light">{expanded ? "▼" : "▶"}</span>
         {monthLabel}
-        <span className="font-semibold text-at-slate">
-          ({itemCount} {itemLabel})
-        </span>
+        {itemCount !== undefined && (
+          <span className="font-semibold text-at-slate">
+            ({itemCount} {itemLabel})
+          </span>
+        )}
       </button>
 
       {expanded && <div className="border-t border-at-border px-4 py-4">{children}</div>}

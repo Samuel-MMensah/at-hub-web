@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { parseTimestamptz } from "@/lib/parse-timestamptz";
 import { GanttChart, type GanttRow } from "./gantt-chart";
 import { updateStageStatus } from "./actions";
@@ -62,7 +63,7 @@ const RUN_STATUS_COLORS: Record<string, string> = {
 };
 
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDateTime(ms: number): string {
@@ -122,7 +123,6 @@ interface ShopFloorClientProps {
 export function ShopFloorClient({ pipeline, jobs }: ShopFloorClientProps) {
   const [showCompleted, setShowCompleted] = useState(false);
   const [rawSelectedOrder, setRawSelectedOrder] = useState<string | null>(null);
-  const [machineExpanded, setMachineExpanded] = useState(false);
   // Lazy initializer: computed once on mount, not on every render — see
   // gantt-chart.tsx for why Date.now() can't be called directly during render.
   const [now] = useState(() => Date.now());
@@ -282,30 +282,24 @@ export function ShopFloorClient({ pipeline, jobs }: ShopFloorClientProps) {
         </div>
       )}
 
-      <div>
-        <button
-          type="button"
-          onClick={() => setMachineExpanded((v) => !v)}
-          className="mb-2 flex items-center gap-1.5 text-sm font-bold text-at-navy"
-        >
-          <span className={`transition-transform ${machineExpanded ? "rotate-90" : ""}`}>▸</span>
-          Machine Utilisation — whole shop
-        </button>
-        {machineExpanded &&
-          (machineRows.length === 0 ? (
-            <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-              Nothing scheduled.
-            </div>
-          ) : (
-            <GanttChart
-              rows={machineRows}
-              colorMap={RUN_STATUS_COLORS}
-              nowLineColor="#ef4444"
-              legendTitle="Run Status"
-              emptyMessage="Nothing scheduled."
-            />
-          ))}
-      </div>
+      <CollapsibleMonthGroup
+        monthLabel="Machine Utilisation — whole shop"
+        itemCount={machineRows.length}
+        itemLabel="jobs"
+        defaultExpanded={false}
+      >
+        {machineRows.length === 0 ? (
+          <div className="text-sm text-at-slate">Nothing scheduled.</div>
+        ) : (
+          <GanttChart
+            rows={machineRows}
+            colorMap={RUN_STATUS_COLORS}
+            nowLineColor="#ef4444"
+            legendTitle="Run Status"
+            emptyMessage="Nothing scheduled."
+          />
+        )}
+      </CollapsibleMonthGroup>
     </div>
   );
 }
@@ -315,7 +309,6 @@ export function ShopFloorClient({ pipeline, jobs }: ShopFloorClientProps) {
 // section's expand/collapse convention. stageOptions is already scoped
 // to the currently drilled-down order by the caller.
 function OperatorUpdatePanel({ stageOptions }: { stageOptions: { value: string; label: string }[] }) {
-  const [expanded, setExpanded] = useState(false);
   const [rawTrackingId, setRawTrackingId] = useState<string | null>(null);
   const [status, setStatus] = useState<StageStatus>("In Progress");
   // Lazy initializer — same purity reasoning as GanttChart's `now`.
@@ -374,17 +367,7 @@ function OperatorUpdatePanel({ stageOptions }: { stageOptions: { value: string; 
 
   return (
     <div className="mt-3">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="mb-2 flex items-center gap-1.5 text-sm font-bold text-at-navy"
-      >
-        <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>▸</span>
-        Operator Update
-      </button>
-
-      {expanded && (
-        <div className="rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
+      <CollapsibleMonthGroup monthLabel="Operator Update" defaultExpanded={false}>
           <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
@@ -440,8 +423,7 @@ function OperatorUpdatePanel({ stageOptions }: { stageOptions: { value: string; 
           <Button disabled={isPending || !trackingId} onClick={handleSubmit}>
             Update Stage Status
           </Button>
-        </div>
-      )}
+      </CollapsibleMonthGroup>
     </div>
   );
 }

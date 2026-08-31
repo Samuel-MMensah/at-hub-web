@@ -25,7 +25,7 @@ export interface ProductionOrderRow extends GarmentClassifiable {
 }
 
 function money(n: number): string {
-  return `${CURRENCY} ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function statusTone(status: string): "success" | "warning" | "danger" | "idle" | "accent" {
