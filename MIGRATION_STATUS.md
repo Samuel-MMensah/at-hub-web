@@ -1563,9 +1563,10 @@ investigated and **deliberately deferred**, not forgotten:
     omitted, not broken — but points nowhere real until set.
 - **Deferred: a real `payment_transactions` ledger table, to replace
   `job_orders.deposit_amount` / `job_invoices.payment` as directly-
-  written running totals.** Proposed and scoped 2026-08-31 (see the
-  "Deposit sync gap" fix below, which this would fully subsume);
-  deliberately scheduled as a future follow-up, not started, so the
+  written running totals.** Proposed and scoped 2026-08-31 (see
+  "Deposit sync gap fix (Phase 1)" in Known gaps below, which this
+  would fully subsume); deliberately scheduled as a future follow-up,
+  not started, so the
   reasoning doesn't need re-investigating from scratch whenever it is
   picked up.
 
@@ -1616,7 +1617,7 @@ investigated and **deliberately deferred**, not forgotten:
     additive interpretation automatically, without Finance adjudicating
     each one — but only if additive is actually correct, which for
     P963191 and P481826 specifically is still genuinely unknown (see
-    the deposit-sync gap entry below).
+    "Deposit sync gap fix (Phase 1)" in Known gaps below).
   - **Free side-fix, not the point of this but worth having:**
     `receipt_no` today is a single column on both tables, silently
     overwritten by every subsequent payment — a second partial payment
@@ -1632,6 +1633,80 @@ investigated and **deliberately deferred**, not forgotten:
   question both deserve a real decision, not a rushed one.
 
 ## Known gaps
+
+- **Deposit sync gap fix (Phase 1) — `job_orders.deposit_amount` and
+  `job_invoices.payment` were two completely independent fields for the
+  same linked order's real collected-to-date figure, confirmed drifting
+  apart in real data; fixed via a live-derived value. Built and
+  verified well before this entry, but never actually committed until
+  2026-08-31 — named plainly here, same as every other "committed
+  late" incident already documented in this file.**
+
+  The problem, confirmed before touching anything: three separate
+  write paths (Dispatch's `recordPayment`, Archive's `recordPayment`,
+  Invoice Entry's `recordInvoicePayment`) could each update one side of
+  what should have been the same number, with no awareness of the
+  other. Verified live: of 10 real linked invoices with `payment > 0`,
+  6 disagreed with their own order's `deposit_amount` — one by close to
+  GH₵340,000. `job_orders` <-> `job_invoices` is also genuinely
+  one-to-many, not 1:1 (5 real orders had 2-4 linked invoices each), so
+  any fix had to sum across every linked invoice, never assume "the"
+  one.
+
+  Fix (Phase 1, mechanism only — no historical data touched):
+  `src/lib/effective-deposit.ts` exports `getInvoicePaymentSumsByOrderNo()`
+  (one query, `job_invoices` grouped by `job_order_no`, summed) and
+  `withEffectiveDeposits()`, which for any order with at least one
+  linked invoice replaces `deposit_amount` with that real sum at read
+  time — an unlinked order's own value passes through completely
+  untouched. `hasLinkedInvoice()` additionally gates Dispatch's and
+  Archive's Record Payment button for a linked order: disabled, with
+  "This order has a linked invoice — record payment through Invoice
+  Entry instead." instead of silently accepting a write that would be
+  immediately overwritten the next time anything read that order.
+
+  15 files across the app were confirmed (via grep, not assumed) to
+  read `job_orders.deposit_amount`; 9 needed an actual code change —
+  `command-center/page.tsx` (all three of its `job_orders` queries),
+  `dispatch/page.tsx` + `dispatch-client.tsx`, `archive/page.tsx` +
+  `archive-client.tsx`, `audit-log/page.tsx`, `authorization/page.tsx`,
+  `my-orders/page.tsx`, `search/page.tsx`. The rest either needed
+  nothing (read-only consumers of an already-corrected value passed
+  down as props: `audit-log-client.tsx`, `my-orders/
+  order-tracker-client.tsx`, `authorization-client.tsx`, `command-
+  center/charts.tsx`) or were correctly left alone (`raise-order/
+  actions.ts` — a brand-new order can never already have a linked
+  invoice, since its `job_order_no` is DB-generated fresh on insert).
+  Verified with a real synthetic linked order carrying two invoices
+  (payments of 300 and 450), confirming the derived value was the sum
+  (750), not a 1:1 mirror of either — and, separately, with a real
+  click-through against a live production order (a disposable
+  finance-role test account, a real login, Playwright driving the
+  actual page): Dispatch's Record Payment button confirmed genuinely
+  disabled, with the stated message, and a forced click produced no
+  request and no state change.
+
+  **The incident, named plainly:** this entire fix — `effective-
+  deposit.ts` plus all 9 patched files — was built and verified
+  (typecheck, lint, a full production build, and the real browser
+  click-through above) well before Phase 2's backfill script, the
+  payment-timeline investigation, and the `payment_transactions`
+  proposal above were done on top of it. None of it was ever
+  committed. `git log --all --oneline -- src/lib/effective-deposit.ts`
+  returned zero results; a broader `git log --all --grep="deposit"` /
+  `--grep="effective"` search turned up nothing either — this sat as
+  pure uncommitted working-tree state through several subsequent
+  tasks. It surfaced the same way the `ARCHIVE_STATUSES`/`jobOrders`
+  incidents did: a later, unrelated commit (`cf17b8e`, the Command
+  Center KPI redesign) captured `command-center/page.tsx` in its
+  Phase-1-dependent form for the first time, without the lib file it
+  imports (still untracked at that point), and broke the production
+  build. Root-caused via the same git-history tracing as those two
+  prior incidents, fixed by committing the missing file (`d5cb6e3`),
+  then shipping the remaining 8 files (`ed1c5cb`), the Phase 2 script
+  (`a0724f7`), and the `payment_transactions` documentation (`2e8162d`)
+  as three separate, correctly-scoped commits rather than retroactively
+  bundling them.
 
 - **Operator Update's cascade compounds if the same stage is submitted
   twice in a row — mitigated at the UI layer, not database-enforced.**
