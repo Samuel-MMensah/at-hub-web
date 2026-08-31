@@ -282,132 +282,114 @@ export default async function CommandCenterPage() {
 
       <div className="mb-2 text-lg font-bold text-at-navy-soft">Command Center</div>
 
-      {/* Total Revenue — the visual anchor of the KPI section, full-width
-          and still deliberately the largest number on the page, but
-          density-passed (2026-08-31) to roughly half its prior height:
-          dense padding + a 2rem ceiling instead of 2.75rem, rather than
-          the oversized hero treatment it had before. */}
-      <div className="grid grid-cols-1">
+      {/* KPI grid (2026-08-31 restructure, replacing the grouped/labeled
+          rows) — Total Revenue is a single grid item spanning all 3 rows
+          in column 1, vertically centered; the other 6 tiles fill columns
+          2-3 in DOM order. On sm+ this relies on CSS Grid's own
+          row-major auto-placement: Total Revenue claims column 1 for all
+          3 rows first, so the 6 plain-flow items that follow it in the
+          markup are auto-packed into columns 2-3 across exactly 3 rows —
+          no explicit grid-row/grid-column needed on any of them. Below
+          sm, Total Revenue instead spans both columns of a plain 2-col
+          grid (full-width on its own row), and the same 6 items auto-flow
+          into a 2-column block underneath it. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-1 sm:row-span-3 sm:grid sm:items-center">
+          <MetricCard
+            label={
+              <>
+                Total Revenue
+                <InfoPopover>
+                  <p>All Approved-and-beyond orders, including completed/delivered ones.</p>
+                </InfoPopover>
+              </>
+            }
+            value={money(totalRevenue)}
+            valueClassName="text-[2rem]"
+            dense
+          />
+        </div>
+
         <MetricCard
           label={
             <>
-              Total Revenue
+              Active Orders
               <InfoPopover>
-                <p>All Approved-and-beyond orders, including completed/delivered ones.</p>
+                <p>
+                  Counts only Approved, In Production, and At Warehouse orders — completed/
+                  delivered orders are excluded, which is why this total is smaller than
+                  Departmental Performance below.
+                </p>
               </InfoPopover>
             </>
           }
-          value={money(totalRevenue)}
-          valueClassName="text-[2rem]"
+          value={activeOrdersCount}
+          subValue={money(activeOrdersValue)}
           dense
         />
-      </div>
+        <MetricCard
+          label="Press Orders"
+          value={pressOrders}
+          subValue={money(pressOrdersValue)}
+          accentColor="#0369a1"
+          dense
+        />
 
-      {/* Three labeled groups (2026-08-31 restructure; density-passed the
-          same day) — same 2-column grid in every group so tile edges align
-          across all three rows; only the label above each distinguishes
-          the grouping. Tighter mt/gap and dense tiles read as one
-          scannable block rather than three separately-scrolled sections. */}
-      <div className="mt-3">
-        <div className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
-          Order Pipeline
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <MetricCard
-            label={
-              <>
-                Active Orders
-                <InfoPopover>
-                  <p>
-                    Counts only Approved, In Production, and At Warehouse orders — completed/
-                    delivered orders are excluded, which is why this total is smaller than
-                    Departmental Performance below.
-                  </p>
-                </InfoPopover>
-              </>
-            }
-            value={activeOrdersCount}
-            subValue={money(activeOrdersValue)}
-            dense
-          />
-          <MetricCard
-            label={
-              <>
-                WIP
-                <InfoPopover>
-                  <p>
-                    Orders currently In Production only — does not include Approved (not yet
-                    started) or At Warehouse (production finished).
-                  </p>
-                </InfoPopover>
-              </>
-            }
-            value={wipCount}
-            subValue={money(wipValue)}
-            accentColor="#0369a1"
-            dense
-          />
-        </div>
-      </div>
+        <MetricCard
+          label={
+            <>
+              WIP
+              <InfoPopover>
+                <p>
+                  Orders currently In Production only — does not include Approved (not yet
+                  started) or At Warehouse (production finished).
+                </p>
+              </InfoPopover>
+            </>
+          }
+          value={wipCount}
+          subValue={money(wipValue)}
+          accentColor="#0369a1"
+          dense
+        />
+        <MetricCard
+          label="Garment Orders"
+          value={garmentOrders}
+          subValue={money(garmentOrdersValue)}
+          accentColor="#d97706"
+          dense
+        />
 
-      <div className="mt-3">
-        <div className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
-          By Department
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <MetricCard
-            label="Press Orders"
-            value={pressOrders}
-            subValue={money(pressOrdersValue)}
-            accentColor="#0369a1"
-            dense
-          />
-          <MetricCard
-            label="Garment Orders"
-            value={garmentOrders}
-            subValue={money(garmentOrdersValue)}
-            accentColor="#d97706"
-            dense
-          />
-        </div>
-      </div>
-
-      <div className="mt-3">
-        <div className="mb-1.5 text-[0.68rem] font-semibold uppercase tracking-wide text-at-slate">
-          Financials
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <MetricCard
-            label={
-              <>
-                Collections
-                <InfoPopover>
-                  <p>
-                    Includes deposits recorded at order-raise time AND payments recorded later
-                    through Invoice Entry for linked invoices — combined correctly, not
-                    double-counted.
-                  </p>
-                </InfoPopover>
-              </>
-            }
-            value={money(collections)}
-            accentColor="#10b981"
-            dense
-          />
-          <MetricCard
-            label={
-              <>
-                Outstanding Receivables
-                <InfoPopover>
-                  <p>Total Revenue minus Collections.</p>
-                </InfoPopover>
-              </>
-            }
-            value={money(outstanding)}
-            accentColor="#ef4444"
-            dense
-          />
-        </div>
+        <MetricCard
+          label={
+            <>
+              Collections
+              <InfoPopover>
+                <p>
+                  Includes deposits recorded at order-raise time AND payments recorded later
+                  through Invoice Entry for linked invoices — combined correctly, not
+                  double-counted.
+                </p>
+              </InfoPopover>
+            </>
+          }
+          value={money(collections)}
+          accentColor="#10b981"
+          dense
+        />
+        <MetricCard
+          label={
+            <>
+              Outstanding Receivables
+              <InfoPopover>
+                <p>Total Revenue minus Collections.</p>
+              </InfoPopover>
+            </>
+          }
+          value={money(outstanding)}
+          accentColor="#ef4444"
+          dense
+        />
       </div>
 
       <TrendCharts rows={trendRows} />
