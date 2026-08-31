@@ -1561,6 +1561,75 @@ investigated and **deliberately deferred**, not forgotten:
   - `APP_URL` (the departmental alert's optional "Open Appointed Time
     Hub" link) degrades gracefully if unset — the button is just
     omitted, not broken — but points nowhere real until set.
+- **Deferred: a real `payment_transactions` ledger table, to replace
+  `job_orders.deposit_amount` / `job_invoices.payment` as directly-
+  written running totals.** Proposed and scoped 2026-08-31 (see the
+  "Deposit sync gap" fix below, which this would fully subsume);
+  deliberately scheduled as a future follow-up, not started, so the
+  reasoning doesn't need re-investigating from scratch whenever it is
+  picked up.
+
+  Architecture: one new table —
+  `payment_transactions(job_order_no nullable, job_invoice_id nullable,
+  amount, date, recorded_by, receipt_no, source CHECK IN
+  ('raise_deposit','dispatch','archive','invoice_entry'), created_at)`
+  — append-only (no UPDATE/DELETE policy; a mistake gets a reversing
+  transaction, never an edit). Every payment-recording write inserts a
+  row here instead of incrementing a column; `deposit_amount` and
+  `payment` (and, by extension, `job_invoices.balance`) become `SUM()`
+  reads at query time, never independently writable again. Open design
+  question worth deciding before writing any code: whether an Invoice
+  Entry payment against a *linked* invoice also stamps `job_order_no`
+  on the same row (recommended — lets both the order's and the
+  invoice's totals come from one `SUM()` each, no join needed) versus
+  only ever joining through `job_invoice_id`.
+
+  Real scope, not a rough guess:
+  - **6 write sites change**, not the 4 that looked obvious at a
+    glance: `raise-order/actions.ts` (initial deposit), `dispatch/
+    actions.ts:82`, `archive/actions.ts:96`, `invoice-entry/
+    actions.ts:189` (initial payment) and `:356` (increment) — plus
+    **`archive/actions.ts:200`**, which is NOT a payment at all (the
+    Master Order Revision edit form's direct `deposit_amount` overwrite)
+    and needs its own decision: disallow direct edits entirely once a
+    ledger exists, or model it as a distinct `source='archive_correction'`
+    transaction type. This is a real fork in the design, not a
+    mechanical swap, and should be settled before implementation starts.
+  - **~18-20 read-path files** need the same "substitute the derived
+    value" treatment Phase 1 of the deposit-sync fix
+    (`src/lib/effective-deposit.ts`) already gave `job_orders.
+    deposit_amount` — except doubled, since `job_invoices.payment`/
+    `balance` become derived too (13 files touch those fields today:
+    Dispatch, Archive, My Sales Dashboard, Category Report, Invoice
+    Entry, Revenue Analysis, Uninvoiced Orders). `effective-deposit.ts`
+    itself would need rewriting to query `payment_transactions` instead
+    of `job_invoices` directly.
+  - **Historical backfill is a different kind of problem than a normal
+    value-correction backfill** (like `backfill_deposit_amounts.py`):
+    there's no real per-payment history before this table exists, only
+    current cumulative totals, so the backfill fabricates one "opening"
+    transaction per existing row (`recorded_by=created_by`,
+    `date=order_date` — best-effort, not a real audit trail). One real
+    side-benefit worth naming: seeding BOTH the order-side and
+    invoice-side historical values as two separate opening transactions
+    per already-disagreeing order would make all of them sum to the
+    additive interpretation automatically, without Finance adjudicating
+    each one — but only if additive is actually correct, which for
+    P963191 and P481826 specifically is still genuinely unknown (see
+    the deposit-sync gap entry below).
+  - **Free side-fix, not the point of this but worth having:**
+    `receipt_no` today is a single column on both tables, silently
+    overwritten by every subsequent payment — a second partial payment
+    erases the first one's receipt number. A row-per-payment ledger
+    fixes this for free.
+  - RLS is the well-precedented part, not the risky part — model
+    directly on `supabase/migrations/20260811090000_job_orders_rls_
+    policies.sql`'s drop-and-recreate-by-role-allowlist pattern.
+
+  Recommendation stands as given at scoping time: treat as a deliberate
+  scheduled follow-up, not something to fold into fast-moving work —
+  the `archive/actions.ts:200` design fork and the backfill-seeding
+  question both deserve a real decision, not a rushed one.
 
 ## Known gaps
 
