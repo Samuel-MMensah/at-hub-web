@@ -587,9 +587,9 @@ export function RaiseOrderClient({
           </div>
         </div>
         {dept === "GARMENT" ? (
-          <GarmentResubmitForm order={resubmitOrder} userFullName={userFullName} />
+          <GarmentResubmitForm order={resubmitOrder} userFullName={userFullName} salesReps={salesReps} />
         ) : (
-          <PressResubmitForm order={resubmitOrder} userFullName={userFullName} />
+          <PressResubmitForm order={resubmitOrder} userFullName={userFullName} salesReps={salesReps} />
         )}
       </div>
     );
@@ -2312,17 +2312,20 @@ function parseExistingTermsNotes(paymentTerms: string): string {
 }
 
 // Shared by both resubmit forms — identical fields in the source for
-// Press and Garment resubmit alike. Distinct from Phase 3's
-// AttachmentsAndTermsSection: neither resubmit form collects a Sales
-// Rep at all (rp_payload/rg_payload never include that key — not
-// carried over from the original order either, ported as-is, not
-// "fixed").
+// Press and Garment resubmit alike. Sales Rep was added here (2026-08-31)
+// to close a real functional gap: a resubmit is a genuinely new
+// job_orders row (see resubmitOrder's own doc comment in actions.ts),
+// so it was silently bypassing the same requirement new-cart submission
+// enforces. Same required field, same explicit "Walk-in / No Sales Rep"
+// choice, same treatment as AttachmentsAndTermsSection — not a second,
+// divergent implementation.
 interface ResubmitAttachmentsState {
   lpoFile: File | null;
   sampleFile: File | null;
   sampleAttached: "No" | "Yes";
   sampleWith: string;
   is30Day: boolean;
+  salesRep: string;
   termsNotes: string;
 }
 
@@ -2330,10 +2333,12 @@ function ResubmitAttachmentsSection({
   state,
   setState,
   hasBalance,
+  salesReps,
 }: {
   state: ResubmitAttachmentsState;
   setState: React.Dispatch<React.SetStateAction<ResubmitAttachmentsState>>;
   hasBalance: boolean;
+  salesReps: SalesRepOption[];
 }) {
   return (
     <>
@@ -2376,7 +2381,7 @@ function ResubmitAttachmentsSection({
           />
         </FormField>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="flex items-center gap-2 text-sm text-at-slate">
           <input
             type="checkbox"
@@ -2385,6 +2390,22 @@ function ResubmitAttachmentsSection({
           />
           30-Day Credit Terms job
         </label>
+        <FormField label="Sales / Marketing Rep (who brought this job) *">
+          <select
+            value={state.salesRep}
+            onChange={(e) => setState((s) => ({ ...s, salesRep: e.target.value }))}
+            required
+            className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+          >
+            <option value="" disabled>{SALES_REP_PLACEHOLDER}</option>
+            <option value={SALES_REP_WALK_IN}>{SALES_REP_WALK_IN}</option>
+            {salesReps.map((r) => (
+              <option key={r.full_name} value={r.full_name}>
+                {r.full_name}
+              </option>
+            ))}
+          </select>
+        </FormField>
       </div>
       {hasBalance && (
         <div className="mt-3">
@@ -2418,7 +2439,15 @@ function ResubmitConfirmation({ ticket }: { ticket: Record<string, unknown> }) {
   );
 }
 
-function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; userFullName: string }) {
+function PressResubmitForm({
+  order,
+  userFullName,
+  salesReps,
+}: {
+  order: ResubmitOrderData;
+  userFullName: string;
+  salesReps: SalesRepOption[];
+}) {
   const [today] = useState(() => todayLocalDateStr());
 
   const [clientName, setClientName] = useState(() => rd(order, "customer_name"));
@@ -2456,6 +2485,10 @@ function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; 
     sampleAttached: rd(order, "sample_attached") === "Yes" ? "Yes" : "No",
     sampleWith: rd(order, "sample_with"),
     is30Day: rd(order, "payment_terms").includes("30-Day Credit Terms"),
+    // "" — never carried over from the original order (it never had one
+    // either, pre-dating this requirement); forces an explicit choice on
+    // every resubmit, same as a brand-new cart submission.
+    salesRep: "",
     termsNotes: parseExistingTermsNotes(rd(order, "payment_terms")),
   }));
 
@@ -2498,6 +2531,7 @@ function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; 
     if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
       missing.push("Sample With (required since a sample is marked attached)");
     }
+    if (!attachments.salesRep) missing.push("Sales Rep");
 
     setMissingFields(missing);
     if (missing.length > 0) return;
@@ -2542,6 +2576,7 @@ function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; 
     fd.set("sampleWith", attachments.sampleWith);
     fd.set("is30Day", String(attachments.is30Day));
     fd.set("termsNotes", attachments.termsNotes);
+    fd.set("salesRep", attachments.salesRep);
     if (attachments.lpoFile) fd.set("lpoFile", attachments.lpoFile);
     if (attachments.sampleFile) fd.set("sampleFile", attachments.sampleFile);
 
@@ -2640,7 +2675,12 @@ function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; 
           </FormField>
         </div>
 
-        <ResubmitAttachmentsSection state={attachments} setState={setAttachments} hasBalance={hasBalance} />
+        <ResubmitAttachmentsSection
+          state={attachments}
+          setState={setAttachments}
+          hasBalance={hasBalance}
+          salesReps={salesReps}
+        />
 
         <SectionHeader>Production Quantity &amp; Category</SectionHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -2810,7 +2850,15 @@ function PressResubmitForm({ order, userFullName }: { order: ResubmitOrderData; 
   );
 }
 
-function GarmentResubmitForm({ order, userFullName }: { order: ResubmitOrderData; userFullName: string }) {
+function GarmentResubmitForm({
+  order,
+  userFullName,
+  salesReps,
+}: {
+  order: ResubmitOrderData;
+  userFullName: string;
+  salesReps: SalesRepOption[];
+}) {
   const [today] = useState(() => todayLocalDateStr());
 
   const [clientName, setClientName] = useState(() => rd(order, "customer_name"));
@@ -2855,6 +2903,10 @@ function GarmentResubmitForm({ order, userFullName }: { order: ResubmitOrderData
     sampleAttached: rd(order, "sample_attached") === "Yes" ? "Yes" : "No",
     sampleWith: rd(order, "sample_with"),
     is30Day: rd(order, "payment_terms").includes("30-Day Credit Terms"),
+    // "" — never carried over from the original order (it never had one
+    // either, pre-dating this requirement); forces an explicit choice on
+    // every resubmit, same as a brand-new cart submission.
+    salesRep: "",
     termsNotes: parseExistingTermsNotes(rd(order, "payment_terms")),
   }));
 
@@ -2881,6 +2933,7 @@ function GarmentResubmitForm({ order, userFullName }: { order: ResubmitOrderData
     if (attachments.sampleAttached === "Yes" && !attachments.sampleWith.trim()) {
       missing.push("Sample With (required since a sample is marked attached)");
     }
+    if (!attachments.salesRep) missing.push("Sales Rep");
 
     setMissingFields(missing);
     if (missing.length > 0) return;
@@ -2945,6 +2998,7 @@ function GarmentResubmitForm({ order, userFullName }: { order: ResubmitOrderData
     fd.set("sampleWith", attachments.sampleWith);
     fd.set("is30Day", String(attachments.is30Day));
     fd.set("termsNotes", attachments.termsNotes);
+    fd.set("salesRep", attachments.salesRep);
     if (attachments.lpoFile) fd.set("lpoFile", attachments.lpoFile);
     if (attachments.sampleFile) fd.set("sampleFile", attachments.sampleFile);
 
@@ -3043,7 +3097,12 @@ function GarmentResubmitForm({ order, userFullName }: { order: ResubmitOrderData
           </FormField>
         </div>
 
-        <ResubmitAttachmentsSection state={attachments} setState={setAttachments} hasBalance={hasBalance} />
+        <ResubmitAttachmentsSection
+          state={attachments}
+          setState={setAttachments}
+          hasBalance={hasBalance}
+          salesReps={salesReps}
+        />
 
         <SectionHeader>Production Quantity &amp; Sourcing</SectionHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

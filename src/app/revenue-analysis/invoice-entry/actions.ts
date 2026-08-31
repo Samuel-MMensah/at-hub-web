@@ -153,11 +153,12 @@ export async function recordInvoice(input: RecordInvoiceInput): Promise<ActionRe
   if (!Number.isFinite(input.payment) || input.payment < 0) {
     return { error: "Payment cannot be negative." };
   }
-  // Required going forward only (2026-08-30 revenue audit), and only for
-  // a standalone entry — re-checked here since the client-side guard is
-  // only a convenience; updateInvoice deliberately has no equivalent
-  // check, so editing a pre-existing invoice is never retroactively
-  // blocked by this.
+  // Required for a standalone entry (2026-08-30 revenue audit) — a
+  // linked invoice is exempt, since attribution there comes from the
+  // order, not this field. Re-checked here since the client-side guard
+  // is only a convenience. updateInvoice enforces the identical rule
+  // below (2026-08-31: closed the edit-time loophole this comment used
+  // to describe) — same check, not a forked copy.
   if (!input.jobOrderNo && !input.salesRep) {
     return { error: 'Select a Sales Rep before submitting — choose "Walk-in / No Sales Rep" if no rep was involved.' };
   }
@@ -230,6 +231,13 @@ export async function updateInvoice(id: number, input: UpdateInvoiceInput): Prom
 
   const fieldError = validateInvoiceFields(input);
   if (fieldError) return { error: fieldError };
+  // Required on every save, not just creation (2026-08-31) — closes the
+  // loophole where re-saving an existing standalone invoice could keep
+  // (or silently blank out) its Sales Rep with no forced choice. Same
+  // rule recordInvoice enforces above, not a forked copy of the check.
+  if (!input.jobOrderNo && !input.salesRep) {
+    return { error: 'Select a Sales Rep before submitting — choose "Walk-in / No Sales Rep" if no rep was involved.' };
+  }
 
   const { amount, nhil, vat, invoiceTotal } = computeInvoiceAmounts(input.quantity, input.unitPrice, input.exempt);
 

@@ -364,6 +364,7 @@ export async function resubmitOrder(formData: FormData): Promise<ActionResult> {
   const sampleWith = String(formData.get("sampleWith") ?? "").trim();
   const is30Day = formData.get("is30Day") === "true";
   const termsNotes = String(formData.get("termsNotes") ?? "").trim();
+  const salesRep = String(formData.get("salesRep") ?? "");
   const originalParentGroupId = String(formData.get("originalParentGroupId") ?? "");
 
   if (!clientName || !clientPhone) {
@@ -371,6 +372,13 @@ export async function resubmitOrder(formData: FormData): Promise<ActionResult> {
   }
   if (sampleAttached === "Yes" && !sampleWith) {
     return { error: "Sample is marked attached — enter who has it before submitting." };
+  }
+  // Required going forward (2026-08-31) — a resubmit is a genuinely new
+  // job_orders row (see this function's own doc comment below), so it
+  // gets the same requirement as submitBatch's new-cart path. Re-checked
+  // here since the client-side guard is only a convenience.
+  if (!salesRep) {
+    return { error: 'Select a Sales Rep before submitting — choose "Walk-in / No Sales Rep" if no rep was involved.' };
   }
 
   let item: Record<string, unknown>;
@@ -431,10 +439,12 @@ export async function resubmitOrder(formData: FormData): Promise<ActionResult> {
     lpo_file_url: lpoResult.url,
     sample_file_url: sampleResult.url,
     payment_terms: paymentTerms,
-    // No sales_rep here — the source's own resubmit payloads
-    // (rp_payload/rg_payload) never include this key at all, unlike
-    // the New-cart batch submit. Not carried over from the original
-    // order either. Ported as-is, not "fixed."
+    // Guaranteed non-empty by the check above — either a real rep's
+    // full_name or the literal "Walk-in / No Sales Rep" value. Added
+    // 2026-08-31: the source's own resubmit payloads never included this
+    // key, but a resubmit is a genuinely new job_orders row, so it was
+    // silently bypassing the requirement new-cart submission enforces.
+    sales_rep: salesRep,
   };
 
   // Matches `if _rp_orig_pgid: rp_payload["parent_group_id"] = _rp_orig_pgid`

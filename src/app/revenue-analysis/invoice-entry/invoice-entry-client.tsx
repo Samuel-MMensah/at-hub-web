@@ -78,6 +78,64 @@ function money(n: number): string {
   return `${CURRENCY}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+// Same downloadCsv shape as Category Report/My Sales Dashboard/Audit
+// Log — duplicated locally per this codebase's established per-file
+// convention, not a shared import.
+function downloadCsv(filenamePrefix: string, columns: string[], rows: string[][]) {
+  const lines = [columns.join(","), ...rows.map((row) => row.map(csvEscape).join(","))];
+  const csv = lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  link.href = url;
+  link.download = `${filenamePrefix}_${yyyy}${mm}${dd}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+const INVOICE_HISTORY_COLUMNS = [
+  "Date",
+  "Order No.",
+  "Customer",
+  "Product",
+  "Category",
+  "Business Unit",
+  "Qty",
+  "Unit Price",
+  "Invoice Total",
+  "Payment",
+  "Balance",
+  "Status",
+];
+
+function invoiceRowToCsv(r: InvoiceRow): string[] {
+  return [
+    r.date,
+    r.job_order_no ?? "",
+    r.customer_name ?? "",
+    r.product_description ?? "",
+    r.revenue_category,
+    r.business_unit,
+    String(r.quantity),
+    r.unit_price.toFixed(2),
+    r.invoice_total.toFixed(2),
+    r.payment.toFixed(2),
+    r.balance.toFixed(2),
+    r.status ?? "",
+  ];
+}
+
 // `date` is a plain Postgres DATE, not timestamptz — same reasoning
 // already established for material_receipts/material_issuances.
 function parseDateOnly(raw: string): Date {
@@ -166,8 +224,13 @@ export function InvoiceEntryClient({
 
       <RecordPaymentSection invoices={invoices} />
 
-      <div className="mb-3 mt-8 border-t-2 border-slate-100 pt-6 text-base font-bold text-at-navy">
-        Invoice History
+      <div className="mb-3 mt-8 flex flex-wrap items-center justify-between gap-2 border-t-2 border-slate-100 pt-6">
+        <div className="text-base font-bold text-at-navy">Invoice History</div>
+        {invoices.length > 0 && (
+          <Button variant="secondary" onClick={() => downloadCsv("ATP_invoice_history", INVOICE_HISTORY_COLUMNS, invoices.map(invoiceRowToCsv))}>
+            ⬇️ Download CSV
+          </Button>
+        )}
       </div>
 
       {invoices.length === 0 ? (
@@ -444,11 +507,11 @@ function InvoiceForm({
     if (!canSubmit || typeof quantity !== "number" || typeof unitPrice !== "number") {
       return;
     }
-    // Required going forward only (2026-08-30 revenue audit): a brand-new
-    // standalone invoice must pick a rep; editing an existing invoice, or
-    // one linked to a job order (attribution comes from the order), is
-    // untouched.
-    if (!isEditing && !selectedOrderNo && !salesRep) {
+    // Required on every save, create or edit (2026-08-31: closed the
+    // edit-time loophole that let a standalone invoice keep a blank
+    // Sales Rep forever) — a job order-linked invoice is still exempt,
+    // since attribution there comes from the order, not this field.
+    if (!selectedOrderNo && !salesRep) {
       setError(`Select a Sales Rep before submitting — choose "${SALES_REP_WALK_IN}" if no rep was involved.`);
       return;
     }
@@ -596,17 +659,15 @@ function InvoiceForm({
           )}
 
           <label className="mb-1 mt-3 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
-            Sales / Marketing Rep (who brought this job){!isEditing ? " *" : ""}
+            Sales / Marketing Rep (who brought this job) *
           </label>
           <select
             value={salesRep}
             onChange={(e) => setSalesRep(e.target.value)}
-            required={!isEditing}
+            required
             className="w-full rounded-at border border-at-border bg-at-white px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
           >
-            <option value="" disabled={!isEditing}>
-              {isEditing ? "— None / Walk-in —" : "— Select Sales Rep —"}
-            </option>
+            <option value="" disabled>— Select Sales Rep —</option>
             <option value={SALES_REP_WALK_IN}>{SALES_REP_WALK_IN}</option>
             {salesReps.map((r) => (
               <option key={r.full_name} value={r.full_name}>
