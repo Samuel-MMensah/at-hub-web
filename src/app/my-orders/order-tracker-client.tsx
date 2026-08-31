@@ -397,11 +397,11 @@ export function OrderTrackerClient({ orders, jobs }: OrderTrackerClientProps) {
           <>
             <OrderTab orders={rejectedOrders} jobs={jobs} isFiltering={isFiltering} />
             {rejectedOrders.length > 0 && (
-              <div className="mt-2 rounded-at border border-red-200 bg-red-50 p-4">
-                <div className="mb-1 text-xs font-bold uppercase tracking-wide text-red-800">
+              <div className="mt-2 rounded-at border border-at-danger bg-at-danger-bg p-4">
+                <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-danger-text">
                   Next Steps for Rejected Orders
                 </div>
-                <div className="text-sm leading-relaxed text-red-900">
+                <div className="text-sm leading-relaxed text-at-danger-text">
                   Rejected orders can be corrected and resubmitted through Raise Job Order — the
                   revised order re-enters the authorization queue automatically. Click
                   &quot;Modify &amp; Resubmit&quot; on the order below to get started.
@@ -677,20 +677,20 @@ function OrderCard({ order, jobs }: { order: JobOrderRow; jobs: JobRow[] }) {
       </div>
 
       {status === "Approved" && approvedBy !== "—" && (
-        <div className="mb-4 rounded-at border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
+        <div className="mb-4 rounded-at border border-at-success bg-at-success-bg px-4 py-3">
+          <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-at-success-text">
             <CheckCircle2 size={13} /> Authorized By
           </span>
-          <span className="ml-3 text-sm font-semibold text-emerald-950">{approvedBy}</span>
+          <span className="ml-3 text-sm font-semibold text-at-success-text">{approvedBy}</span>
         </div>
       )}
 
       {status === "Rejected" && rejNote && (
-        <div className="mb-4 rounded-at border border-red-200 bg-red-50 px-4 py-3">
-          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-red-800">
+        <div className="mb-4 rounded-at border border-at-danger bg-at-danger-bg px-4 py-3">
+          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-danger-text">
             Management Rejection Note
           </div>
-          <div className="text-sm leading-relaxed text-red-900">{rejNote}</div>
+          <div className="text-sm leading-relaxed text-at-danger-text">{rejNote}</div>
         </div>
       )}
 

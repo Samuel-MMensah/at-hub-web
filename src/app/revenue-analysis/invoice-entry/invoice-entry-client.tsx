@@ -853,7 +853,7 @@ function InvoiceForm({
           changes drift the total away from what was actually paid. Save
           stays disabled (see canSubmit) until this is acknowledged. */}
       {hasExistingPayment && (
-        <div className="mb-4 rounded-lg border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
+        <div className="mb-4 rounded-at border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
           <div className="mb-1 flex items-center gap-1.5 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
             <AlertTriangle size={13} /> Payment Already Recorded
           </div>
@@ -1031,7 +1031,7 @@ function InvoicePaymentPanel({ invoice }: { invoice: InvoiceRow }) {
         // balance=0, opposite direction: a rounded-to-zero balance
         // disables the payment action entirely instead of enabling one —
         // nothing meaningful left to pay, so there's no action to offer.
-        <div className="inline-block rounded-md border border-green-200 bg-green-50 px-3.5 py-2 text-sm font-semibold text-green-800">
+        <div className="inline-block rounded-at border border-at-success bg-at-success-bg px-3.5 py-2 text-sm font-semibold text-at-success-text">
           Fully paid.
         </div>
       )}

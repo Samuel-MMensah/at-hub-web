@@ -445,7 +445,7 @@ function OrderOperationsPanel({ order }: { order: ArchiveOrderRow }) {
         </div>
       ) : total > 0 ? (
         <div className="mb-5 border-t border-at-border pt-4">
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-3.5 py-2 text-sm font-semibold text-green-800">
+          <div className="inline-flex items-center gap-1.5 rounded-at border border-at-success bg-at-success-bg px-3.5 py-2 text-sm font-semibold text-at-success-text">
             <CheckCircle2 size={15} /> Fully Paid — {money(total)}
           </div>
         </div>
@@ -582,7 +582,7 @@ function RevisionForm({ order, garment }: { order: ArchiveOrderRow; garment: boo
     <div className="mt-4 border-t border-at-border pt-4">
       <div className="mb-3 text-base font-semibold text-at-navy">Master Order Revision Interface</div>
 
-      <div className="mb-4 rounded-lg border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
+      <div className="mb-4 rounded-at border-l-4 border-at-warning bg-at-warning-bg px-4 py-3">
         <div className="mb-1 flex items-center gap-1.5 text-[0.72rem] font-bold uppercase tracking-wide text-at-warning-text">
           <AlertTriangle size={13} /> Revision Lifecycle Notice
         </div>
@@ -772,7 +772,7 @@ function ReopenOrderSection({ order }: { order: ArchiveOrderRow }) {
 
   return (
     <div className="mt-4 border-t border-at-border pt-4">
-      <div className="mb-3 rounded-lg border border-blue-200 border-l-4 border-l-blue-500 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+      <div className="mb-3 rounded-at border-l-4 border-at-info bg-at-info-bg px-4 py-3 text-sm text-at-info-text">
         Finalized by mistake? Reopening reverts the order to <strong>At Warehouse</strong> so
         Dispatch can be redone correctly. Any payment already recorded is untouched — only the
         status reverts.

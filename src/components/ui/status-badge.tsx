@@ -5,7 +5,7 @@ type StatusTone = "success" | "warning" | "danger" | "idle" | "accent" | "sample
 const TONE_CLASSES: Record<StatusTone, string> = {
   success: "bg-at-success-bg text-at-success-text",
   warning: "bg-at-warning-bg text-at-warning-text",
-  danger: "bg-red-50 text-at-danger",
+  danger: "bg-at-danger-bg text-at-danger-text",
   idle: "bg-slate-100 text-slate-600",
   accent: "bg-sky-50 text-at-accent",
   // Genuinely distinct from every other tone above — violet, not

@@ -441,16 +441,16 @@ function LayoutForm({ order }: { order: ApprovedOrderRow }) {
       </div>
 
       {flags.length > 0 && (
-        <div className="mt-4 rounded-at border border-red-300 border-l-4 border-l-red-500 bg-red-50 px-4 py-3">
-          <div className="mb-1.5 text-sm font-bold text-red-800">
+        <div className="mt-4 rounded-at border-l-4 border-at-danger bg-at-danger-bg px-4 py-3">
+          <div className="mb-1.5 text-sm font-bold text-at-danger-text">
             This schedule looks unusually long — double-check quantities before committing:
           </div>
-          <ul className="mb-2 list-disc pl-5 text-sm text-red-800">
+          <ul className="mb-2 list-disc pl-5 text-sm text-at-danger-text">
             {flags.map((f, i) => (
               <li key={i}>{f}</li>
             ))}
           </ul>
-          <label className="flex items-center gap-2 text-sm font-semibold text-red-900">
+          <label className="flex items-center gap-2 text-sm font-semibold text-at-danger-text">
             <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
             I&apos;ve double-checked these quantities and want to commit this schedule anyway
           </label>
@@ -472,7 +472,7 @@ function LayoutForm({ order }: { order: ApprovedOrderRow }) {
       </div>
 
       {committedCount !== null && (
-        <div className="mt-4 rounded-at border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+        <div className="mt-4 rounded-at border border-at-success bg-at-success-bg px-4 py-3 text-sm font-semibold text-at-success-text">
           Production plan committed for &apos;{jobName}&apos; — {committedCount} machine stage
           {committedCount === 1 ? "" : "s"} scheduled and written to Shop Floor Control. Order{" "}
           {order.job_order_no} moved to &apos;In Production&apos;.

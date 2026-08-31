@@ -85,7 +85,7 @@ export default async function RaiseOrderPage({
       ) : (
         <>
           {resubmitRequestedButInvalid && !resubmitOrder && (
-            <div className="mb-4 rounded-at border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+            <div className="mb-4 rounded-at border border-at-danger bg-at-danger-bg px-4 py-3 text-sm font-semibold text-at-danger-text">
               That order can&apos;t be resubmitted — it may not be rejected, may not belong to
               your account, or may no longer exist. Showing the normal Raise Job Order form
               instead.

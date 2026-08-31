@@ -24,6 +24,20 @@
   --at-warning-text: #b06000;
   --at-danger: #ef4444;
   --at-danger-soft: #fca5a5;
+  /* Added 2026-08-31 — danger callout/notice boxes had a border color
+     (--at-danger) but no matching bg/text pair, unlike warning/success,
+     so every danger box on the page reached for raw Tailwind red-* on
+     its own. Values match what the app's own raw-red boxes already
+     used most often (bg-red-50/text-red-800), not a fresh invention. */
+  --at-danger-bg: #fef2f2;
+  --at-danger-text: #991b1b;
+  /* Added 2026-08-31 — a genuinely new tone: several pages already had a
+     plain informational (not warning/danger/success) callout box, each
+     reaching for its own raw blue-*. Values match the most common raw
+     usage already in place (bg-blue-50/text-blue-900/border-blue-500). */
+  --at-info: #3b82f6;
+  --at-info-bg: #eff6ff;
+  --at-info-text: #1e3a8a;
 
   --at-radius-sm: 6px;
   --at-radius: 10px;
@@ -50,6 +64,11 @@
   --color-at-warning-text: var(--at-warning-text);
   --color-at-danger: var(--at-danger);
   --color-at-danger-soft: var(--at-danger-soft);
+  --color-at-danger-bg: var(--at-danger-bg);
+  --color-at-danger-text: var(--at-danger-text);
+  --color-at-info: var(--at-info);
+  --color-at-info-bg: var(--at-info-bg);
+  --color-at-info-text: var(--at-info-text);
 
   --radius-at-sm: var(--at-radius-sm);
   --radius-at: var(--at-radius);

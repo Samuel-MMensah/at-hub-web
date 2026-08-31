@@ -207,7 +207,7 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
             </div>
           )}
 
-          <div className="mt-3 rounded-at border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-800">
+          <div className="mt-3 rounded-at border border-at-danger bg-at-danger-bg px-4 py-2.5 text-sm font-semibold text-at-danger-text">
             Finalize Dispatch is locked until the outstanding balance of {money(balance)} is
             fully recorded.
           </div>
@@ -215,12 +215,12 @@ function DispatchOrderCard({ order }: { order: DispatchOrderRow }) {
       )}
 
       {balance > 0 && is30Day && (
-        <div className="mt-3 rounded-at border border-blue-200 bg-blue-50 px-4 py-2.5">
-          <div className="mb-2 text-sm font-semibold text-blue-900">
+        <div className="mt-3 rounded-at border border-at-info bg-at-info-bg px-4 py-2.5">
+          <div className="mb-2 text-sm font-semibold text-at-info-text">
             This order is flagged 30-Day Credit Terms — payment isn&apos;t expected yet. Confirm
             below to allow dispatch without full payment.
           </div>
-          <label className="flex items-center gap-2 text-sm text-blue-900">
+          <label className="flex items-center gap-2 text-sm text-at-info-text">
             <input
               type="checkbox"
               checked={confirm30Day}

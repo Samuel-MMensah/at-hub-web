@@ -586,11 +586,11 @@ export function RaiseOrderClient({
     const dept = resubmitOrder.department === "GARMENT" ? "GARMENT" : "PRESS";
     return (
       <div>
-        <div className="mb-4 rounded-at-lg border border-red-300 bg-gradient-to-br from-red-50 to-rose-100 p-5">
-          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-red-800">
+        <div className="mb-4 rounded-at-lg border border-at-danger bg-at-danger-bg p-5">
+          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-danger-text">
             Resubmission Mode Active
           </div>
-          <div className="text-sm text-red-900">
+          <div className="text-sm text-at-danger-text">
             You are correcting and resubmitting{" "}
             <strong>{resubmitOrder.job_order_no ?? "this order"}</strong> for{" "}
             <strong>{resubmitOrder.customer_name ?? ""}</strong>. All fields are pre-loaded. Make
@@ -1010,11 +1010,11 @@ function PressCart({
   return (
     <div>
       {cartItems.length > 0 && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 px-5 py-3.5">
-          <div className="flex items-center gap-1.5 text-sm font-bold text-green-800">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-at-success bg-at-success-bg px-5 py-3.5">
+          <div className="flex items-center gap-1.5 text-sm font-bold text-at-success-text">
             <ShoppingCart size={15} /> {cartItems.length} item(s) in cart for {cartClientName || "—"}
           </div>
-          <div className="text-xs text-green-700">
+          <div className="text-xs text-at-success-text">
             Add more items below, or scroll down to submit the batch
           </div>
         </div>
@@ -1369,14 +1369,14 @@ function PressCart({
 
       {confirmedBatch && confirmedBatch.length > 0 && (
         <div className="mt-6">
-          <div className="rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 p-5">
-            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-green-800">
+          <div className="rounded-at-lg border border-at-success bg-at-success-bg p-5">
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-success-text">
               Batch Submission Confirmed
             </div>
             <div className="text-lg font-extrabold text-at-navy">
               {confirmedBatch.length} item(s) deposited in management authorization ledger
             </div>
-            <div className="mt-1 text-sm text-green-700">
+            <div className="mt-1 text-sm text-at-success-text">
               Batch Ref: <strong>{String(confirmedBatch[0].parent_group_id ?? "—")}</strong> &nbsp;·&nbsp; Client:{" "}
               <strong>{String(confirmedBatch[0].customer_name ?? "—")}</strong>
             </div>
@@ -1832,11 +1832,11 @@ function GarmentCart({
   return (
     <div>
       {cartItems.length > 0 && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 px-5 py-3.5">
-          <div className="text-sm font-bold text-green-800">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-at-lg border border-at-success bg-at-success-bg px-5 py-3.5">
+          <div className="text-sm font-bold text-at-success-text">
             {cartItems.length} garment item(s) in cart for {cartClientName || "—"}
           </div>
-          <div className="text-xs text-green-700">
+          <div className="text-xs text-at-success-text">
             Add more items below, or scroll down to submit the batch
           </div>
         </div>
@@ -2234,14 +2234,14 @@ function GarmentCart({
 
       {confirmedBatch && confirmedBatch.length > 0 && (
         <div className="mt-6">
-          <div className="rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 p-5">
-            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-green-800">
+          <div className="rounded-at-lg border border-at-success bg-at-success-bg p-5">
+            <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-success-text">
               Garment Batch Submission Confirmed
             </div>
             <div className="text-lg font-extrabold text-at-navy">
               {confirmedBatch.length} garment item(s) deposited in management authorization ledger
             </div>
-            <div className="mt-1 text-sm text-green-700">
+            <div className="mt-1 text-sm text-at-success-text">
               Batch Ref: <strong>{String(confirmedBatch[0].parent_group_id ?? "—")}</strong> &nbsp;·&nbsp; Client:{" "}
               <strong>{String(confirmedBatch[0].customer_name ?? "—")}</strong>
             </div>
@@ -2451,8 +2451,8 @@ function ResubmitAttachmentsSection({
 
 function ResubmitConfirmation({ ticket }: { ticket: Record<string, unknown> }) {
   return (
-    <div className="mt-6 rounded-at-lg border border-green-300 bg-gradient-to-br from-green-50 to-green-100 p-5">
-      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-green-800">
+    <div className="mt-6 rounded-at-lg border border-at-success bg-at-success-bg p-5">
+      <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-success-text">
         Order Resubmitted
       </div>
       <div className="text-lg font-extrabold text-at-navy">

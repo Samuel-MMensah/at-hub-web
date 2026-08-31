@@ -296,7 +296,7 @@ function GroupCard({ group, groupKey: gk }: { group: PendingOrderRow[]; groupKey
       </div>
 
       {hasRevision && (
-        <div className="mt-2 flex gap-3 rounded-lg border-2 border-l-[6px] border-at-warning bg-at-warning-bg px-5 py-3.5">
+        <div className="mt-2 flex gap-3 rounded-at-lg border-2 border-l-[6px] border-at-warning bg-at-warning-bg px-5 py-3.5">
           <AlertTriangle size={26} className="shrink-0 text-at-warning-text" />
           <div>
             <div className="mb-1 text-xs font-bold uppercase tracking-wide text-at-warning-text">
