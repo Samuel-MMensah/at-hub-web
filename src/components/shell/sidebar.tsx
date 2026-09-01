@@ -13,6 +13,10 @@ interface SidebarProps {
   userRole: string;
   role: Role | null;
   isSalesRep: boolean;
+  // Optional, defaults to false (2026-09-01) — every existing caller
+  // omits it and gets the prior behavior unchanged; only My Sales
+  // Dashboard's page currently passes a real value.
+  isSalesManager?: boolean;
   pendingApprovalsCount?: number;
 }
 
@@ -21,6 +25,7 @@ export function Sidebar({
   userRole,
   role,
   isSalesRep,
+  isSalesManager = false,
   pendingApprovalsCount = 0,
 }: SidebarProps) {
   const pathname = usePathname();
@@ -46,7 +51,7 @@ export function Sidebar({
         </div>
 
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter((item) => canSeeItem(item, role, isSalesRep));
+          const visibleItems = group.items.filter((item) => canSeeItem(item, role, isSalesRep, isSalesManager));
           if (visibleItems.length === 0) return null;
 
           return (

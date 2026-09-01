@@ -50,6 +50,16 @@ export interface NavItem {
    * default until isSalesRep is true, even with no `roles` set.
    */
   requiresSalesRep?: boolean;
+  /**
+   * Same role-independent OR as requiresSalesRep, additive to it
+   * (2026-09-01) — a flagged sales manager who is NOT also a sales rep
+   * still needs to find My Sales Dashboard in the nav (the page itself
+   * now grants them access to view any rep's data; without this they'd
+   * have no way to discover it short of typing the URL). Optional on
+   * every other NavItem/canSeeItem caller, defaulting to false, so no
+   * other item's visibility changes.
+   */
+  requiresSalesManager?: boolean;
   badgeKey?: "pendingApprovals";
 }
 
@@ -101,7 +111,13 @@ export const NAV_GROUPS: NavGroup[] = [
       // deliberately: visibility is purely requiresSalesRep, matching
       // the confirmed dual-role reality (Bertha/Mohammed/Mante hold
       // Front Desk but are gated here only by is_sales_rep).
-      { label: "My Sales Dashboard", href: "/my-sales-dashboard", icon: TrendingUp, requiresSalesRep: true },
+      {
+        label: "My Sales Dashboard",
+        href: "/my-sales-dashboard",
+        icon: TrendingUp,
+        requiresSalesRep: true,
+        requiresSalesManager: true,
+      },
       { label: "Samples", href: "/samples", icon: FlaskConical, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Approved Orders Archive", href: "/archive", icon: Archive, roles: ADMIN_ROLES },
       { label: "Audit Log", href: "/audit-log", icon: History },
@@ -117,17 +133,25 @@ export function hasRole(role: Role | null, allowedRoles: Role[]): boolean {
   return allowedRoles.some((allowed) => allowed.trim().toLowerCase() === normalizedRole);
 }
 
-export function canSeeItem(item: NavItem, role: Role | null, isSalesRep: boolean): boolean {
-  // requiresSalesRep is an OR, not an AND: satisfying it alone is
-  // enough regardless of role/roles. Checked first so it can grant
-  // visibility a role-gated item's own `roles` list would otherwise
-  // deny (the Guest-only sales rep case).
+export function canSeeItem(
+  item: NavItem,
+  role: Role | null,
+  isSalesRep: boolean,
+  isSalesManager: boolean = false
+): boolean {
+  // requiresSalesRep/requiresSalesManager are each an OR, not an AND:
+  // satisfying either alone is enough regardless of role/roles. Checked
+  // first so either can grant visibility a role-gated item's own
+  // `roles` list would otherwise deny (the Guest-only sales rep case,
+  // and now the Guest-only sales manager case).
   if (item.requiresSalesRep && isSalesRep) return true;
+  if (item.requiresSalesManager && isSalesManager) return true;
   if (!item.roles) {
     // No role restriction: open to any authenticated user — UNLESS
-    // requiresSalesRep is set and wasn't satisfied above, in which
-    // case that's the item's only gate and it stays hidden.
-    return !item.requiresSalesRep;
+    // requiresSalesRep/requiresSalesManager is set and wasn't satisfied
+    // above, in which case that's the item's only gate and it stays
+    // hidden.
+    return !item.requiresSalesRep && !item.requiresSalesManager;
   }
   return hasRole(role, item.roles);
 }

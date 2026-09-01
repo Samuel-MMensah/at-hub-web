@@ -317,7 +317,7 @@ export function MySalesDashboardClient({
 
         {clientBreakdown.length === 0 ? (
           <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-            No revenue attributed to you yet.
+            No revenue attributed to {repName} yet.
           </div>
         ) : (
           <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
@@ -374,7 +374,7 @@ export function MySalesDashboardClient({
 
         {sortedInvoices.length === 0 ? (
           <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-            No invoices recorded against you yet.
+            No invoices recorded against {repName} yet.
           </div>
         ) : (
           monthGroups.map((month) => (

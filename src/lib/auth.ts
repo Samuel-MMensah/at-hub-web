@@ -10,6 +10,13 @@ export interface AuthUser {
   // Desk, md, ...), confirmed live during the clients-subsystem sales
   // rep task. Gates /my-sales-dashboard.
   isSalesRep: boolean;
+  // Orthogonal to BOTH role and isSalesRep — Isaac Kum and Charles Adoo
+  // hold both flags at once (2026-09-01). Read the same direct way as
+  // isSalesRep (profiles' self-scoped SELECT policy already allows a
+  // caller to read their own row) — current_user_is_sales_manager() is
+  // for RLS policies to call internally, not something the app itself
+  // needs to invoke. Also gates /my-sales-dashboard, additively.
+  isSalesManager: boolean;
 }
 
 export async function requireUser(): Promise<AuthUser> {
@@ -25,7 +32,7 @@ export async function requireUser(): Promise<AuthUser> {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("full_name, role, department, is_sales_rep")
+    .select("full_name, role, department, is_sales_rep, is_sales_manager")
     .eq("id", user.id)
     .single();
 
@@ -37,6 +44,7 @@ export async function requireUser(): Promise<AuthUser> {
       role: "Front Desk",
       department: "NONE",
       isSalesRep: false,
+      isSalesManager: false,
     };
   }
 
@@ -46,5 +54,6 @@ export async function requireUser(): Promise<AuthUser> {
     role: profile.role ?? "Front Desk",
     department: profile.department ?? "NONE",
     isSalesRep: profile.is_sales_rep ?? false,
+    isSalesManager: profile.is_sales_manager ?? false,
   };
 }
