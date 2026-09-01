@@ -1,10 +1,18 @@
+import Link from "next/link";
 import { AppShell } from "@/components/shell/app-shell";
 import { TopBar } from "@/components/shell/topbar";
 import { RestrictedAccess } from "@/components/shell/restricted-access";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { getSalesReps } from "@/lib/sales-reps";
-import { MySalesDashboardClient, type SalesJobOrderRow, type SalesInvoiceRow } from "./my-sales-dashboard-client";
+import {
+  MySalesDashboardClient,
+  SalesTeamOverview,
+  type SalesJobOrderRow,
+  type SalesInvoiceRow,
+  type TeamJobOrderRow,
+  type TeamInvoiceRow,
+} from "./my-sales-dashboard-client";
 import { RepSelector } from "./rep-selector";
 
 // Phase 4a's confirmed, verified finding (not assumed here — see
@@ -56,19 +64,58 @@ async function getMyInvoices(salesRepName: string, myJobOrderNos: string[]): Pro
   return Array.from(byId.values());
 }
 
+const TEAM_JOB_ORDER_SELECT = "id, job_order_no, client_id, order_date, sales_rep";
+const TEAM_INVOICE_SELECT = "id, date, job_order_no, client_id, sales_rep, invoice_total, payment, balance";
+
+// Sales Team Overview (manager-only tab) — same two-query "unlinked +
+// linked, deduped by id" shape as getMyJobOrders/getMyInvoices above,
+// generalized from .eq(salesRepName) to .in(repNames) since this
+// aggregates across every real rep at once instead of scoping to one.
+// sales_rep is included in both selects so the client component can
+// group each row by its OWNING rep (see TeamInvoiceRow's own comment
+// for why a linked invoice's sales_rep is null and resolved via its
+// job_order_no instead).
+async function getTeamJobOrders(repNames: string[]): Promise<TeamJobOrderRow[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("job_orders").select(TEAM_JOB_ORDER_SELECT).in("sales_rep", repNames);
+  return (data ?? []) as TeamJobOrderRow[];
+}
+
+async function getTeamInvoices(repNames: string[], allJobOrderNos: string[]): Promise<TeamInvoiceRow[]> {
+  const supabase = await createClient();
+
+  const unlinked = await supabase.from("job_invoices").select(TEAM_INVOICE_SELECT).in("sales_rep", repNames);
+
+  const linked =
+    allJobOrderNos.length > 0
+      ? await supabase.from("job_invoices").select(TEAM_INVOICE_SELECT).in("job_order_no", allJobOrderNos)
+      : { data: [] as TeamInvoiceRow[] };
+
+  const byId = new Map<number, TeamInvoiceRow>();
+  for (const row of [...(unlinked.data ?? []), ...(linked.data ?? [])] as TeamInvoiceRow[]) {
+    byId.set(row.id, row);
+  }
+  return Array.from(byId.values());
+}
+
 export default async function MySalesDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rep?: string }>;
+  searchParams: Promise<{ rep?: string; view?: string }>;
 }) {
   const user = await requireUser();
-  const { rep: repParam } = await searchParams;
+  const { rep: repParam, view: viewParam } = await searchParams;
 
   // Manager-only: the real source of truth for who's selectable is the
   // SAME get_sales_reps() RPC the dropdown itself is sourced from (per
   // this task's own instruction) — never a second, possibly-drifted list.
   const salesReps = user.isSalesManager ? await getSalesReps() : [];
   const repNames = salesReps.map((r) => r.full_name);
+
+  // Two tabs, manager-only — a plain rep has no `view` concept at all
+  // and always gets the "own" experience unchanged. "team" is only ever
+  // reachable by a manager; anyone else's ?view=team is silently ignored.
+  const activeView: "own" | "team" = user.isSalesManager && viewParam === "team" ? "team" : "own";
 
   // Default selection: the manager's own name if they're also a sales
   // rep, otherwise the first rep in the list. A non-manager rep always
@@ -87,13 +134,30 @@ export default async function MySalesDashboardPage({
   const canView = user.isSalesRep || user.isSalesManager;
   const viewingOwnData = scopedRepName === user.fullName;
 
-  const jobOrders = scopedRepName ? await getMyJobOrders(scopedRepName) : [];
-  const invoices = scopedRepName
-    ? await getMyInvoices(
-        scopedRepName,
-        jobOrders.map((o) => o.job_order_no)
-      )
-    : [];
+  // Only fetch what the ACTIVE tab actually needs — switching tabs never
+  // pays for the other tab's queries.
+  const jobOrders = activeView === "own" && scopedRepName ? await getMyJobOrders(scopedRepName) : [];
+  const invoices =
+    activeView === "own" && scopedRepName
+      ? await getMyInvoices(
+          scopedRepName,
+          jobOrders.map((o) => o.job_order_no)
+        )
+      : [];
+
+  const teamJobOrders = activeView === "team" ? await getTeamJobOrders(repNames) : [];
+  const teamInvoices =
+    activeView === "team"
+      ? await getTeamInvoices(
+          repNames,
+          teamJobOrders.map((o) => o.job_order_no)
+        )
+      : [];
+
+  const tabClass = (active: boolean) =>
+    `px-4 py-2.5 text-sm font-bold transition-colors ${
+      active ? "border-b-2 border-at-navy text-at-navy" : "text-at-slate hover:text-at-navy"
+    }`;
 
   return (
     <AppShell
@@ -107,30 +171,50 @@ export default async function MySalesDashboardPage({
 
       <div className="mb-1 text-lg font-bold text-at-navy-soft">My Sales Dashboard</div>
       <div className="mb-4 text-sm text-at-slate">
-        {viewingOwnData
-          ? "Jobs and revenue attributed to you as sales/marketing rep."
-          : `Jobs and revenue attributed to ${scopedRepName} as sales/marketing rep.`}
+        {activeView === "team"
+          ? "Company-wide sales performance, one row per real sales rep."
+          : viewingOwnData
+            ? "Jobs and revenue attributed to you as sales/marketing rep."
+            : `Jobs and revenue attributed to ${scopedRepName} as sales/marketing rep.`}
       </div>
 
       {!canView ? (
         <RestrictedAccess message="My Sales Dashboard is reserved for accounts flagged as sales reps or sales managers." />
-      ) : !scopedRepName ? (
-        <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
-          No sales reps are configured yet — nothing to show.
-        </div>
       ) : (
         <>
-          {/* Manager-only: re-renders the EXACT SAME dashboard below,
-              scoped to whichever rep is selected — no forked component,
-              just a different scopedRepName driving the same two
-              queries above. Navigates via a real ?rep= URL param (see
-              rep-selector.tsx), so switching reps is a genuine server
-              refetch, never client-side-only state. */}
+          {/* Manager-only tab bar — same underline-tab convention as
+              Archive/Dispatch/Warehouse's own tab bars, just Link-driven
+              instead of local state, since both tabs' content is fetched
+              server-side and switching tabs is a real navigation, not a
+              client-side toggle. */}
           {user.isSalesManager && (
-            <RepSelector options={repNames} currentRep={scopedRepName} />
+            <div className="mb-4 flex gap-1 border-b border-at-border">
+              <Link href="/my-sales-dashboard" className={tabClass(activeView === "own")}>
+                My Dashboard
+              </Link>
+              <Link href="/my-sales-dashboard?view=team" className={tabClass(activeView === "team")}>
+                Sales Team Overview
+              </Link>
+            </div>
           )}
 
-          {/* MANDATORY, permanent, high-visibility caption — the most
+          {activeView === "team" ? (
+            <SalesTeamOverview repNames={repNames} jobOrders={teamJobOrders} invoices={teamInvoices} />
+          ) : !scopedRepName ? (
+            <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
+              No sales reps are configured yet — nothing to show.
+            </div>
+          ) : (
+            <>
+              {/* Manager-only: re-renders the EXACT SAME dashboard below,
+                  scoped to whichever rep is selected — no forked component,
+                  just a different scopedRepName driving the same two
+                  queries above. Navigates via a real ?rep= URL param (see
+                  rep-selector.tsx), so switching reps is a genuine server
+                  refetch, never client-side-only state. */}
+              {user.isSalesManager && <RepSelector options={repNames} currentRep={scopedRepName} />}
+
+              {/* MANDATORY, permanent, high-visibility caption — the most
               consequential one in this sweep (2026-08-30 revenue audit):
               a rep seeing a low number here with no explanation could
               reasonably think their own performance is being
@@ -147,27 +231,35 @@ export default async function MySalesDashboardPage({
               is someone else's — so the caption is reframed in the third
               person for that case instead of misleadingly implying it's
               about the viewer. */}
-          <div className="mb-4 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-xs font-semibold text-at-warning-text">
-            {viewingOwnData ? (
-              <>
-                This only counts orders and invoices with your name recorded as Sales Rep. Sales
-                Rep became a required field on 2026-08-30 — before that date, many orders and
-                invoices were never tagged with any rep, so real work you brought in earlier may
-                not appear here. A low total isn&apos;t necessarily a performance issue; it may
-                just mean older records were never attributed to anyone.
-              </>
-            ) : (
-              <>
-                This only counts orders and invoices with {scopedRepName}&apos;s name recorded as
-                Sales Rep. Sales Rep became a required field on 2026-08-30 — before that date,
-                many orders and invoices were never tagged with any rep, so real work{" "}
-                {scopedRepName} brought in earlier may not appear here. A low total isn&apos;t
-                necessarily a reflection of {scopedRepName}&apos;s performance; it may just mean
-                older records were never attributed to anyone.
-              </>
-            )}
-          </div>
-          <MySalesDashboardClient key={scopedRepName} repName={scopedRepName} jobOrders={jobOrders} invoices={invoices} />
+              <div className="mb-4 rounded-at border border-at-warning bg-at-warning-bg px-4 py-2.5 text-xs font-semibold text-at-warning-text">
+                {viewingOwnData ? (
+                  <>
+                    This only counts orders and invoices with your name recorded as Sales Rep.
+                    Sales Rep became a required field on 2026-08-30 — before that date, many
+                    orders and invoices were never tagged with any rep, so real work you brought
+                    in earlier may not appear here. A low total isn&apos;t necessarily a
+                    performance issue; it may just mean older records were never attributed to
+                    anyone.
+                  </>
+                ) : (
+                  <>
+                    This only counts orders and invoices with {scopedRepName}&apos;s name recorded
+                    as Sales Rep. Sales Rep became a required field on 2026-08-30 — before that
+                    date, many orders and invoices were never tagged with any rep, so real work{" "}
+                    {scopedRepName} brought in earlier may not appear here. A low total isn&apos;t
+                    necessarily a reflection of {scopedRepName}&apos;s performance; it may just
+                    mean older records were never attributed to anyone.
+                  </>
+                )}
+              </div>
+              <MySalesDashboardClient
+                key={scopedRepName}
+                repName={scopedRepName}
+                jobOrders={jobOrders}
+                invoices={invoices}
+              />
+            </>
+          )}
         </>
       )}
     </AppShell>

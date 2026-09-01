@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
@@ -43,6 +44,44 @@ interface ClientBreakdownRow {
   collected: number;
   outstanding: number;
   jobCount: number;
+}
+
+// Sales Team Overview (2026-09-01, manager-only) — same two underlying
+// tables as SalesJobOrderRow/SalesInvoiceRow above, just widened with
+// sales_rep so a per-rep aggregation can group rows by OWNING rep
+// instead of the query already being scoped to one. sales_rep is
+// guaranteed non-null on TeamJobOrderRow (the query that produces these
+// filters .in("sales_rep", repNames)); on TeamInvoiceRow it's only ever
+// set directly for an UNLINKED invoice (same sales_rep_only_when_
+// unlinked CHECK constraint Category Report's effectiveSalesRep()
+// already documents) — a linked invoice's owning rep is resolved via
+// its job_order_no against the job_orders rows instead, not this field.
+export interface TeamJobOrderRow {
+  id: number;
+  job_order_no: string;
+  client_id: number | null;
+  order_date: string | null;
+  sales_rep: string;
+}
+
+export interface TeamInvoiceRow {
+  id: number;
+  date: string;
+  job_order_no: string | null;
+  client_id: number | null;
+  sales_rep: string | null;
+  invoice_total: number;
+  payment: number;
+  balance: number;
+}
+
+interface RepLeaderboardRow {
+  repName: string;
+  totalRevenue: number;
+  collected: number;
+  outstanding: number;
+  clientCount: number;
+  jobsRaised: number;
 }
 
 function money(n: number): string {
@@ -455,6 +494,219 @@ export function MySalesDashboardClient({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+const LEADERBOARD_COLUMNS = [
+  "Rep Name",
+  "Total Revenue",
+  "Collected",
+  "Outstanding",
+  "Client Count",
+  "Jobs Raised",
+];
+
+function leaderboardRowToCsv(r: RepLeaderboardRow): string[] {
+  return [
+    r.repName,
+    r.totalRevenue.toFixed(2),
+    r.collected.toFixed(2),
+    r.outstanding.toFixed(2),
+    String(r.clientCount),
+    String(r.jobsRaised),
+  ];
+}
+
+// Manager-only (gated by the caller, page.tsx) — same underlying
+// job_orders/job_invoices data and date-range filtering convention as
+// MySalesDashboardClient above, aggregated per rep instead of scoped to
+// one. Deliberately independent date-range state from the individual
+// dashboard's own — this is a separate tab, not required to share a
+// filter with a view the manager may not even have open.
+export function SalesTeamOverview({
+  repNames,
+  jobOrders,
+  invoices,
+}: {
+  repNames: string[];
+  jobOrders: TeamJobOrderRow[];
+  invoices: TeamInvoiceRow[];
+}) {
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const hasRange = fromDate !== "" && toDate !== "";
+  const rangeValid = !hasRange || fromDate <= toDate;
+
+  const filteredInvoices = useMemo(() => {
+    if (!hasRange || !rangeValid) return invoices;
+    return invoices.filter((i) => i.date >= fromDate && i.date <= toDate);
+  }, [invoices, hasRange, rangeValid, fromDate, toDate]);
+
+  const filteredJobOrders = useMemo(() => {
+    if (!hasRange || !rangeValid) return jobOrders;
+    return jobOrders.filter((o) => o.order_date && o.order_date >= fromDate && o.order_date <= toDate);
+  }, [jobOrders, hasRange, rangeValid, fromDate, toDate]);
+
+  function clearRange() {
+    setFromDate("");
+    setToDate("");
+  }
+
+  // Every real rep gets a row, even one with zero real data in the
+  // filtered range — "one row per real sales rep (from
+  // get_sales_reps())" is the whole point of this table, not "one row
+  // per rep who happens to have data."
+  const leaderboard: RepLeaderboardRow[] = useMemo(() => {
+    const byRep = new Map<string, RepLeaderboardRow>();
+    for (const name of repNames) {
+      byRep.set(name, {
+        repName: name,
+        totalRevenue: 0,
+        collected: 0,
+        outstanding: 0,
+        clientCount: 0,
+        jobsRaised: 0,
+      });
+    }
+
+    const repByOrderNo = new Map<string, string>();
+    for (const o of filteredJobOrders) {
+      repByOrderNo.set(o.job_order_no, o.sales_rep);
+      const row = byRep.get(o.sales_rep);
+      if (row) row.jobsRaised += 1;
+    }
+
+    // Distinct client_id per rep, counted from this rep's own filtered
+    // invoices — same source/definition as MySalesDashboardClient's own
+    // clientBreakdown.length above, not a fresh definition of "client."
+    const clientsByRep = new Map<string, Set<number | null>>();
+    for (const inv of filteredInvoices) {
+      const owningRep = inv.sales_rep ?? repByOrderNo.get(inv.job_order_no ?? "");
+      if (!owningRep) continue;
+      const row = byRep.get(owningRep);
+      if (!row) continue;
+      row.totalRevenue += inv.invoice_total;
+      row.collected += inv.payment;
+      row.outstanding += inv.balance;
+      const clientSet = clientsByRep.get(owningRep) ?? new Set<number | null>();
+      clientSet.add(inv.client_id);
+      clientsByRep.set(owningRep, clientSet);
+    }
+    for (const [repName, clientSet] of clientsByRep) {
+      const row = byRep.get(repName);
+      if (row) row.clientCount = clientSet.size;
+    }
+
+    // Total Revenue descending by default, per this task's own instruction.
+    return Array.from(byRep.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+  }, [repNames, filteredJobOrders, filteredInvoices]);
+
+  function exportLeaderboardCsv() {
+    downloadCsv("ATP_sales_team_overview", LEADERBOARD_COLUMNS, leaderboard.map(leaderboardRowToCsv));
+  }
+
+  return (
+    <div>
+      <div className="mb-4 rounded-at-lg border border-at-border bg-at-white p-4 shadow-at-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              From Date
+            </label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[0.7rem] font-bold uppercase tracking-wide text-at-slate">
+              To Date
+            </label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-at border border-at-border bg-at-bg px-3 py-2 text-sm text-at-navy outline-none focus:border-at-accent"
+            />
+          </div>
+          {hasRange && (
+            <Button variant="secondary" onClick={clearRange}>
+              Clear
+            </Button>
+          )}
+          <div className="text-sm text-at-slate">
+            {hasRange && rangeValid
+              ? `Showing ${fromDate} to ${toDate} — invoices by invoice date, jobs by date raised.`
+              : "Showing all-time (no date range applied)."}
+          </div>
+        </div>
+        {hasRange && !rangeValid && (
+          <div className="mt-2 text-sm font-semibold text-red-600">
+            From Date must be on or before To Date — showing all-time until fixed.
+          </div>
+        )}
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-base font-bold text-at-navy">Sales Team Overview</div>
+        <Button onClick={exportLeaderboardCsv} disabled={leaderboard.length === 0}>
+          <Download size={14} /> Download Sales Team Overview CSV
+        </Button>
+      </div>
+
+      {leaderboard.length === 0 ? (
+        <div className="rounded-at-lg border border-at-border bg-at-white p-6 text-sm text-at-slate shadow-at-sm">
+          No sales reps are configured yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-at-lg border border-at-border bg-at-white shadow-at-sm">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-at-border bg-at-bg">
+                {LEADERBOARD_COLUMNS.map((col) => (
+                  <th
+                    key={col}
+                    className={`whitespace-nowrap px-4 py-2.5 text-[0.7rem] font-bold uppercase tracking-wide text-at-slate ${
+                      col === "Rep Name" ? "" : "text-right"
+                    }`}
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {leaderboard.map((row) => (
+                <tr key={row.repName} className="border-b border-at-border last:border-0 hover:bg-at-bg">
+                  <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-at-navy">
+                    <Link
+                      href={`/my-sales-dashboard?rep=${encodeURIComponent(row.repName)}`}
+                      className="text-at-accent hover:underline"
+                    >
+                      {row.repName}
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">{money(row.totalRevenue)}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">{money(row.collected)}</td>
+                  <td
+                    className="whitespace-nowrap px-4 py-2.5 text-right font-bold"
+                    style={{ color: row.outstanding > 0 ? "#ef4444" : "#10b981" }}
+                  >
+                    {money(row.outstanding)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">{row.clientCount}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right text-at-navy">
+                    {row.jobsRaised.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
