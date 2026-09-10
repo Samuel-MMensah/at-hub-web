@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ADMIN_ROLES, FINANCE_ROLES, hasRole } from "@/lib/nav-config";
 import { formatLifecycleTimestamp } from "@/lib/lifecycle-timestamp";
+import { getInvoicePaymentSumsByOrderNo, hasLinkedInvoice } from "@/lib/effective-deposit";
 
 interface ActionResult {
   error?: string;
@@ -57,12 +58,27 @@ export async function recordPayment(
 
   const { data: current, error: fetchError } = await supabase
     .from("job_orders")
-    .select("deposit_amount, total_amount")
+    .select("job_order_no, deposit_amount, total_amount")
     .eq("id", orderId)
     .single();
 
   if (fetchError || !current) {
     return { error: fetchError?.message ?? "Order not found." };
+  }
+
+  // Server-side mirror of the UI's disabled-button gate (2026-09-10
+  // security review, Part 2.3) — the UI hiding the form was never a
+  // real block, since this function itself never re-checked before
+  // writing deposit_amount/receipt_no directly to a linked order.
+  // deposit_amount would've been silently overridden on every
+  // subsequent read anyway (withEffectiveDeposits), but receipt_no
+  // isn't re-derived by anything, so a bypassed write here left a real,
+  // uncorrected receipt_no drift with no invoice-side counterpart.
+  const invoicePaymentSums = await getInvoicePaymentSumsByOrderNo(supabase);
+  if (hasLinkedInvoice(current, invoicePaymentSums)) {
+    return {
+      error: "This order has a linked invoice — record payment through Invoice Entry instead.",
+    };
   }
 
   const currentDeposit = Number(current.deposit_amount ?? 0);
