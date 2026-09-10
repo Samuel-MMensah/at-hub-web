@@ -12,6 +12,7 @@ import {
   History,
   TrendingUp,
   FlaskConical,
+  UserSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -121,6 +122,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Samples", href: "/samples", icon: FlaskConical, roles: [...ADMIN_ROLES, ...FINANCE_ROLES] },
       { label: "Approved Orders Archive", href: "/archive", icon: Archive, roles: ADMIN_ROLES },
       { label: "Audit Log", href: "/audit-log", icon: History },
+      // No `roles` — open to any authenticated user, same gate as Global
+      // Search ("same 'find something' category of tool" per this
+      // task's own framing; confirmed Global Search's own page has no
+      // role check either, and clients' RLS SELECT policy is already
+      // "any authenticated user").
+      { label: "Client Profile", href: "/clients", icon: UserSearch },
     ],
   },
 ];
