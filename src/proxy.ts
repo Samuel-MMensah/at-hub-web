@@ -60,5 +60,13 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // manifest.webmanifest/sw.js must be reachable unauthenticated too --
+  // both are fetched by the browser/OS itself (installability check,
+  // SW registration), not necessarily carrying a live session cookie
+  // (e.g. a visitor still on /login). Gating them behind auth would
+  // silently break installability: the browser would get the /login
+  // HTML back instead of the JSON manifest / worker script it expects.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
