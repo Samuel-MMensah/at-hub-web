@@ -5,7 +5,7 @@ import { Download, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleMonthGroup } from "@/components/ui/collapsible-month-group";
 import { currentMonthKey, groupByMonth, type MonthGroup } from "@/lib/month-groups";
-import { recordInvoice, recordInvoicePayment, updateInvoice } from "./actions";
+import { recordInvoice, recordInvoicePayment, updateInvoice, deleteInvoice } from "./actions";
 import type { SalesRepOption } from "@/lib/sales-reps";
 import { SALES_REP_WALK_IN } from "@/lib/sales-rep-constants";
 
@@ -210,6 +210,35 @@ export function InvoiceEntryClient({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Same modal-confirmation pattern as Archive's DeleteMasterOrderSection
+  // (archive-client.tsx) — a real "are you sure" step, not a bare button —
+  // adapted for a table of many rows instead of one detail panel: a
+  // single shared modal, driven by WHICH row's id is pending, rather than
+  // one modal instance per row. No retype-to-confirm text field here
+  // (unlike Archive's, which requires retyping the job_order_no):
+  // invoices have no equally reliable, always-present identifier a user
+  // would naturally retype (job_order_no and customer_name are both
+  // nullable on an unlinked invoice), and this is only ever reachable for
+  // a zero-payment invoice in the first place — real money never at risk
+  // of being deleted out from under it, unlike a whole job order's history.
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletePending, startDeleteTransition] = useTransition();
+  const pendingDeleteInvoice = invoices.find((r) => r.id === pendingDeleteId) ?? null;
+
+  function handleConfirmDelete() {
+    if (pendingDeleteId === null) return;
+    setDeleteError(null);
+    startDeleteTransition(async () => {
+      const result = await deleteInvoice(pendingDeleteId);
+      if (result.error) {
+        setDeleteError(result.error);
+        return;
+      }
+      setPendingDeleteId(null);
+    });
+  }
+
   return (
     <div>
       <InvoiceForm
@@ -311,13 +340,30 @@ export function InvoiceEntryClient({
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-at-slate">{r.status || "—"}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleEditClick(r.id)}
-                          className="text-xs font-semibold text-at-accent hover:underline"
-                        >
-                          Edit
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleEditClick(r.id)}
+                            className="text-xs font-semibold text-at-accent hover:underline"
+                          >
+                            Edit
+                          </button>
+                          {/* Hidden entirely (not disabled) once payment > 0
+                              — Finance sees the restriction up front rather
+                              than clicking Delete and being rejected. */}
+                          {round2(r.payment) <= 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDeleteError(null);
+                                setPendingDeleteId(r.id);
+                              }}
+                              className="text-xs font-semibold text-red-600 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -326,6 +372,36 @@ export function InvoiceEntryClient({
             </div>
           </CollapsibleMonthGroup>
         ))
+      )}
+
+      {pendingDeleteInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-at-lg bg-at-white p-6 shadow-at-md">
+            <div className="mb-2 text-base font-bold text-red-700">Delete Invoice — Permanent</div>
+            <div className="mb-4 text-sm text-at-slate">
+              This permanently and irreversibly deletes the {pendingDeleteInvoice.date} invoice for{" "}
+              <strong className="text-at-navy">{pendingDeleteInvoice.customer_name || "—"}</strong>{" "}
+              ({money(pendingDeleteInvoice.invoice_total)}) from the database — there is no undo.
+              Only possible because it has GH₵0.00 recorded as paid; once a payment is recorded,
+              this option disappears.
+            </div>
+            {deleteError && <div className="mb-3 text-sm font-semibold text-red-600">{deleteError}</div>}
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setPendingDeleteId(null);
+                  setDeleteError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="danger" disabled={isDeletePending} onClick={handleConfirmDelete}>
+                Delete Permanently
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

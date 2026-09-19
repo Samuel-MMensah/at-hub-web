@@ -310,6 +310,48 @@ export async function updateInvoice(id: number, input: UpdateInvoiceInput): Prom
 // `balance = total - deposit`, unclamped) means a silent server-side
 // clamp here would be the one place balance math got force-corrected
 // instead of surfaced, inconsistent with that convention.
+// Confirmed decision: a hard block, not a warning-then-proceed. Unlike
+// recordInvoicePayment's overpayment check above (which rejects an
+// action that would create a NEW inconsistency), this rejects deleting
+// something that already has real, recorded money against it — there's
+// no "clamp" or "override" equivalent for that; the correct fix is to
+// reverse the payment first (via a mechanism that doesn't exist yet,
+// deliberately out of scope here), not to let the invoice disappear out
+// from under a real payment. payment is re-fetched fresh through the
+// caller's own session — never trusted from whatever the client last
+// rendered, same discipline as every other money check in this file.
+export async function deleteInvoice(id: number): Promise<ActionResult> {
+  await requireInvoiceEntryAccess();
+
+  const supabase = await createClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("job_invoices")
+    .select("payment")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !current) {
+    return { error: fetchError?.message ?? "Invoice not found." };
+  }
+
+  const currentPayment = round2(current.payment ?? 0);
+  if (currentPayment > 0) {
+    return {
+      error: `This invoice has GH₵${currentPayment.toFixed(2)} recorded as paid — reverse the payment before deleting.`,
+    };
+  }
+
+  const { error } = await supabase.from("job_invoices").delete().eq("id", id);
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/revenue-analysis/invoice-entry");
+  revalidatePath("/revenue-analysis");
+  return {};
+}
+
 export async function recordInvoicePayment(
   invoiceId: number,
   paymentAmount: number,
